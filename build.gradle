@@ -12,6 +12,10 @@ ext {
 
     osName = System.getProperty('os.name').toLowerCase()
     osArch = System.getProperty('os.arch').toLowerCase()
+    // -XstartOnFirstThread is macOS-only; other JVMs reject it at startup.
+    appJvmArgs = osName.contains('mac')
+        ? ['-XstartOnFirstThread', '--enable-native-access=ALL-UNNAMED']
+        : ['--enable-native-access=ALL-UNNAMED']
     if (osName.contains('mac')) {
         lwjglNatives = (osArch.contains('aarch64') || osArch.contains('arm64'))
             ? 'natives-macos-arm64'
@@ -50,14 +54,11 @@ dependencies {
 
 application {
     mainClass = 'spaceinc.Main'
-    applicationDefaultJvmArgs = [
-        '-XstartOnFirstThread',
-        '--enable-native-access=ALL-UNNAMED'
-    ]
+    applicationDefaultJvmArgs = appJvmArgs
 }
 
 tasks.named('run', JavaExec) {
-    jvmArgs = ['-XstartOnFirstThread', '--enable-native-access=ALL-UNNAMED']
+    jvmArgs = appJvmArgs
 }
 
 def jlinkOutputDir = layout.buildDirectory.dir('jlink-image')
@@ -103,7 +104,7 @@ tasks.register('jpackageApp', Exec) {
         def jpackageBin = launcherTool.get().metadata.installationPath.asFile.toPath().resolve('bin/jpackage').toString()
         def jlinkDir = jlinkOutputDir.get().asFile
 
-        commandLine(
+        def args = [
             jpackageBin,
             '--type', 'app-image',
             '--name', 'SpaceINC',
@@ -112,9 +113,9 @@ tasks.register('jpackageApp', Exec) {
             '--main-jar', "${project.name}-${project.version}.jar",
             '--main-class', 'spaceinc.Main',
             '--runtime-image', jlinkDir.absolutePath,
-            '--dest', outDir.absolutePath,
-            '--java-options', '-XstartOnFirstThread',
-            '--java-options', '--enable-native-access=ALL-UNNAMED'
-        )
+            '--dest', outDir.absolutePath
+        ]
+        appJvmArgs.each { args += ['--java-options', it] }
+        commandLine(args)
     }
 }
