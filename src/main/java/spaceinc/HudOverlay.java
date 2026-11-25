@@ -15,7 +15,7 @@ import static org.lwjgl.opengl.GL30.*;
  * Lightweight crisp 2D tactical HUD with built-in 5x7 bitmap font.
  */
 public class HudOverlay {
-    private static final int MAX_VERTS = 16384;
+    private static final int MAX_VERTS = 65536;
     private final Shader shader;
     private final int vao;
     private final int vbo;
@@ -70,6 +70,11 @@ public class HudOverlay {
         FONT.put('(', new int[]{0x02,0x04,0x08,0x08,0x08,0x04,0x02});
         FONT.put(')', new int[]{0x08,0x04,0x02,0x02,0x02,0x04,0x08});
         FONT.put('&', new int[]{0x0C,0x12,0x14,0x08,0x15,0x12,0x0D});
+        FONT.put(',', new int[]{0x00,0x00,0x00,0x00,0x04,0x04,0x08});
+        FONT.put('%', new int[]{0x19,0x1A,0x02,0x04,0x08,0x0B,0x13});
+        FONT.put('#', new int[]{0x0A,0x0A,0x1F,0x0A,0x1F,0x0A,0x0A});
+        FONT.put('+', new int[]{0x00,0x04,0x04,0x1F,0x04,0x04,0x00});
+        FONT.put('>', new int[]{0x10,0x08,0x04,0x02,0x04,0x08,0x10});
         FONT.put(' ', new int[]{0x00,0x00,0x00,0x00,0x00,0x00,0x00});
     }
 
@@ -89,7 +94,7 @@ public class HudOverlay {
         glBindVertexArray(0);
     }
 
-    public void render(int width, int height, StarSystem sys, Ship ship, String targetName, int fps) {
+    public void render(int width, int height, StarSystem sys, Ship ship, String targetName, TargetInfo selected, int fps) {
         vertCount = 0;
         buffer.clear();
 
@@ -100,6 +105,31 @@ public class HudOverlay {
         int starTotal = StarSystem.StarType.values().length;
         drawText(30, 52, 1.6f, "STAR [" + starNum + "/" + starTotal + "]: " + sys.starType.displayName, 1.0f, 0.84f, 0.45f, 1.0f);
         drawText(30, 70, 1.4f, "[ / ] CYCLE STAR TYPES   1-9 / 0 / - : DIRECT SELECT", 0.65f, 0.72f, 0.82f, 0.9f);
+
+        // Top-right Selected Object Info Card
+        if (selected != null) {
+            int depCount = selected.deposits.size();
+            float cardW = 540;
+            float cardH = 128 + depCount * 20;
+            float cx = width - cardW - 18;
+            float cy = 18;
+            drawRect(cx, cy, cardW, cardH, 0.03f, 0.05f, 0.09f, 0.88f);
+            drawRect(cx, cy, cardW, 2, 0.30f, 0.82f, 1.00f, 0.90f);
+            drawText(cx + 14, cy + 12, 1.8f, "TARGET: " + selected.name, 0.38f, 0.90f, 1.00f, 1.0f);
+            drawText(cx + 14, cy + 36, 1.5f, "CLASS:  " + selected.category, 0.72f, 0.82f, 0.92f, 0.95f);
+
+            float dist = selected.getPosition().distance(ship.position);
+            drawText(cx + 14, cy + 56, 1.5f, String.format("DIST:   %.1f KM", dist), 1.00f, 0.84f, 0.42f, 1.0f);
+            drawText(cx + 14, cy + 78, 1.4f, "MINABLE ORES -> REFINED ELEMENTS:", 0.56f, 0.92f, 0.72f, 0.95f);
+
+            float rowY = cy + 98;
+            for (MineralRegistry.OreDeposit dep : selected.deposits) {
+                String line = String.format("- %s (%d%%) -> %s", dep.ore.displayName, dep.percent, dep.ore.elementListText);
+                drawText(cx + 18, rowY, 1.4f, line, 0.85f, 0.94f, 0.90f, 0.95f);
+                rowY += 20;
+            }
+            drawText(cx + 14, rowY + 6, 1.4f, "OWNER:  " + selected.faction + "  [NAVIGATE / SURFACE SOON]", 0.55f, 0.65f, 0.76f, 0.85f);
+        }
 
         // Bottom-left telemetry
         drawRect(18, height - 92, 410, 74, 0.03f, 0.05f, 0.09f, 0.72f);
@@ -113,7 +143,7 @@ public class HudOverlay {
         drawRect(width - 378, height - 112, 360, 94, 0.03f, 0.05f, 0.09f, 0.72f);
         drawText(width - 364, height - 100, 1.4f, "WASD / ARROWS : THRUST", 0.72f, 0.80f, 0.90f, 0.95f);
         drawText(width - 364, height - 82, 1.4f, "SHIFT         : AFTERBURNER", 0.72f, 0.80f, 0.90f, 0.95f);
-        drawText(width - 364, height - 64, 1.4f, "LEFT CLICK    : SET WAYPOINT", 0.72f, 0.80f, 0.90f, 0.95f);
+        drawText(width - 364, height - 64, 1.4f, "LEFT CLICK    : TARGET OBJECT", 0.72f, 0.80f, 0.90f, 0.95f);
         drawText(width - 364, height - 46, 1.4f, "R-DRAG / Q-E  : ORBIT CAMERA", 0.72f, 0.80f, 0.90f, 0.95f);
         drawText(width - 364, height - 28, 1.4f, "SCROLL        : ZOOM", 0.72f, 0.80f, 0.90f, 0.95f);
 

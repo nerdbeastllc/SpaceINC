@@ -1,0 +1,120 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'spaceinc'
+version = '1.0.0'
+
+ext {
+    lwjglVersion = '3.3.6'
+    jomlVersion = '1.10.7'
+
+    osName = System.getProperty('os.name').toLowerCase()
+    osArch = System.getProperty('os.arch').toLowerCase()
+    if (osName.contains('mac')) {
+        lwjglNatives = (osArch.contains('aarch64') || osArch.contains('arm64'))
+            ? 'natives-macos-arm64'
+            : 'natives-macos'
+    } else if (osName.contains('win')) {
+        lwjglNatives = 'natives-windows'
+    } else {
+        lwjglNatives = (osArch.contains('aarch64') || osArch.contains('arm64'))
+            ? 'natives-linux-arm64'
+            : 'natives-linux'
+    }
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform("org.lwjgl:lwjgl-bom:${lwjglVersion}")
+
+    implementation 'org.lwjgl:lwjgl'
+    implementation 'org.lwjgl:lwjgl-glfw'
+    implementation 'org.lwjgl:lwjgl-opengl'
+    implementation "org.joml:joml:${jomlVersion}"
+
+    runtimeOnly "org.lwjgl:lwjgl::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::${lwjglNatives}"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::${lwjglNatives}"
+}
+
+application {
+    mainClass = 'spaceinc.Main'
+    applicationDefaultJvmArgs = [
+        '-XstartOnFirstThread',
+        '--enable-native-access=ALL-UNNAMED'
+    ]
+}
+
+tasks.named('run', JavaExec) {
+    jvmArgs = ['-XstartOnFirstThread', '--enable-native-access=ALL-UNNAMED']
+}
+
+def jlinkOutputDir = layout.buildDirectory.dir('jlink-image')
+def jpackageOutputDir = layout.buildDirectory.dir('jpackage')
+
+tasks.register('jlinkImage', Exec) {
+    group = 'distribution'
+    description = 'Builds a minimal custom Java 25 runtime image using jlink.'
+
+    def launcherTool = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    doFirst {
+        def outDir = jlinkOutputDir.get().asFile
+        if (outDir.exists()) outDir.deleteDir()
+        def javaBin = launcherTool.get().metadata.installationPath.asFile.toPath().resolve('bin/jlink').toString()
+        commandLine(
+            javaBin,
+            '--add-modules', 'java.base,java.desktop,jdk.unsupported',
+            '--strip-debug',
+            '--no-man-pages',
+            '--no-header-files',
+            '--compress', 'zip-6',
+            '--output', outDir.absolutePath
+        )
+    }
+}
+
+tasks.register('jpackageApp', Exec) {
+    group = 'distribution'
+    description = 'Packages SpaceINC as a self-contained native app bundle via jpackage + jlink.'
+    dependsOn 'installDist', 'jlinkImage'
+
+    def launcherTool = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    doFirst {
+        def outDir = jpackageOutputDir.get().asFile
+        if (outDir.exists()) outDir.deleteDir()
+        outDir.mkdirs()
+
+        def distLibDir = layout.buildDirectory.dir("install/${project.name}/lib").get().asFile
+        def jpackageBin = launcherTool.get().metadata.installationPath.asFile.toPath().resolve('bin/jpackage').toString()
+        def jlinkDir = jlinkOutputDir.get().asFile
+
+        commandLine(
+            jpackageBin,
+            '--type', 'app-image',
+            '--name', 'SpaceINC',
+            '--app-version', project.version.toString(),
+            '--input', distLibDir.absolutePath,
+            '--main-jar', "${project.name}-${project.version}.jar",
+            '--main-class', 'spaceinc.Main',
+            '--runtime-image', jlinkDir.absolutePath,
+            '--dest', outDir.absolutePath,
+            '--java-options', '-XstartOnFirstThread',
+            '--java-options', '--enable-native-access=ALL-UNNAMED'
+        )
+    }
+}

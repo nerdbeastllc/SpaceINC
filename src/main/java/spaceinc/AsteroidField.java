@@ -1,6 +1,7 @@
 package spaceinc;
 
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.lwjgl.system.MemoryUtil;
 
 import java.nio.FloatBuffer;
@@ -28,8 +29,22 @@ public class AsteroidField {
     private final int indexCount;
     private final int instanceCount;
 
+    // Lightweight CPU-side orbital metadata for instant click picking
+    private final float[] orbitR;
+    private final float[] startAngle;
+    private final float[] orbitSpeed;
+    private final float[] yOffset;
+    private final float[] pickRadius;
+    private final boolean[] isComet;
+
     public AsteroidField(int beltCount, int oortCount) {
         this.instanceCount = beltCount + oortCount;
+        this.orbitR = new float[instanceCount];
+        this.startAngle = new float[instanceCount];
+        this.orbitSpeed = new float[instanceCount];
+        this.yOffset = new float[instanceCount];
+        this.pickRadius = new float[instanceCount];
+        this.isComet = new boolean[instanceCount];
 
         // Build one craggy low-poly asteroid mesh (lat/lon displaced sphere)
         int stacks = 6;
@@ -131,10 +146,18 @@ public class AsteroidField {
             instBuf.put(r).put(angle).put(speed).put(yOff);
             instBuf.put(sx).put(sy).put(sz).put(spinPhase);
             instBuf.put(cr).put(cg).put(cb).put(0.0f);
+
+            orbitR[i] = r;
+            startAngle[i] = angle;
+            orbitSpeed[i] = speed;
+            yOffset[i] = yOff;
+            pickRadius[i] = Math.max(sx, Math.max(sy, sz));
+            isComet[i] = false;
         }
 
         // 2. Oort Cloud (on the ecliptic plane beyond Pluto 770 -> r = 910..1225)
         for (int i = 0; i < oortCount; i++) {
+            int idx = beltCount + i;
             float r = 910.0f + rng.nextFloat() * 315.0f;
             float yOff = (rng.nextFloat() - 0.5f) * 18.0f;
             float angle = rng.nextFloat() * 2.0f * (float) Math.PI;
@@ -150,6 +173,13 @@ public class AsteroidField {
             instBuf.put(r).put(angle).put(speed).put(yOff);
             instBuf.put(sx).put(sy).put(sz).put(spinPhase);
             instBuf.put(ice * 0.78f).put(ice * 0.90f).put(ice * 1.05f).put(1.0f);
+
+            orbitR[idx] = r;
+            startAngle[idx] = angle;
+            orbitSpeed[idx] = speed;
+            yOffset[idx] = yOff;
+            pickRadius[idx] = Math.max(sx, Math.max(sy, sz));
+            isComet[idx] = true;
         }
         instBuf.flip();
 
@@ -185,6 +215,41 @@ public class AsteroidField {
         glBindVertexArray(vao);
         glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0L, instanceCount);
         glBindVertexArray(0);
+    }
+
+    public int pick(Vector3f rayOrigin, Vector3f rayDir, float elapsed, float camDistScale) {
+        int bestIdx = -1;
+        float bestT = Float.MAX_VALUE;
+        Vector3f pos = new Vector3f();
+        Vector3f oc = new Vector3f();
+
+        for (int i = 0; i < instanceCount; i++) {
+            float a = startAngle[i] + elapsed * orbitSpeed[i];
+            pos.set((float) Math.cos(a) * orbitR[i], yOffset[i], (float) Math.sin(a) * orbitR[i]);
+
+            float distToCam = pos.distance(rayOrigin);
+            float r = Math.max(pickRadius[i] * 1.8f, distToCam * 0.012f * camDistScale);
+
+            oc.set(pos).sub(rayOrigin);
+            float proj = oc.dot(rayDir);
+            if (proj < 0) continue;
+            float d2 = oc.lengthSquared() - proj * proj;
+            if (d2 <= r * r && proj < bestT) {
+                bestT = proj;
+                bestIdx = i;
+            }
+        }
+        return bestIdx;
+    }
+
+    public TargetInfo getTargetInfo(int idx, java.util.function.Supplier<Float> timeSupplier) {
+        boolean comet = isComet[idx];
+        String name = comet ? String.format("OORT COMET #%04d", idx + 1) : String.format("BELT ASTEROID #%04d", idx + 1);
+        String cat = comet ? "ICY PLANETESIMAL" : "SILICATE / METALLIC ASTEROID";
+        return new TargetInfo(name, cat, MineralRegistry.forAsteroid(idx, comet), "UNCLAIMED", pickRadius[idx], () -> {
+            float a = startAngle[idx] + timeSupplier.get() * orbitSpeed[idx];
+            return new Vector3f((float) Math.cos(a) * orbitR[idx], yOffset[idx], (float) Math.sin(a) * orbitR[idx]);
+        });
     }
 
     public void dispose() {

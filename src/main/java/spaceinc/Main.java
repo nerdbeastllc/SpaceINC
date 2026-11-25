@@ -26,6 +26,9 @@ public class Main {
     private final IsometricCamera camera = new IsometricCamera();
     private final StarSystem starSystem = new StarSystem();
     private final Ship ship = new Ship();
+    private AsteroidField asteroidField;
+    private TargetInfo selectedTarget = null;
+    private float currentElapsed = 0f;
 
     private int focusIndex = 0; // 0=Ship, 1=Star, 2..10=Planets
 
@@ -99,9 +102,22 @@ public class Main {
                 double[] mx = new double[1];
                 double[] my = new double[1];
                 glfwGetCursorPos(window, mx, my);
-                Vector3f hit = camera.screenToPlane((float) mx[0], (float) my[0], winWidth, winHeight, 0f);
-                if (hit != null) {
-                    ship.waypoint = hit;
+                Vector3f rayOrigin = new Vector3f();
+                Vector3f rayDir = new Vector3f();
+                camera.screenToRay((float) mx[0], (float) my[0], winWidth, winHeight, rayOrigin, rayDir);
+
+                TargetInfo celestialHit = starSystem.pickCelestial(rayOrigin, rayDir);
+                int astIdx = (asteroidField != null)
+                    ? asteroidField.pick(rayOrigin, rayDir, currentElapsed, 1.0f)
+                    : -1;
+                TargetInfo astHit = (astIdx >= 0) ? asteroidField.getTargetInfo(astIdx, () -> currentElapsed) : null;
+
+                if (celestialHit != null && astHit != null) {
+                    float dCel = celestialHit.getPosition().distanceSquared(rayOrigin);
+                    float dAst = astHit.getPosition().distanceSquared(rayOrigin);
+                    selectedTarget = (dCel <= dAst) ? celestialHit : astHit;
+                } else {
+                    selectedTarget = (celestialHit != null) ? celestialHit : astHit;
                 }
             }
         });
@@ -175,7 +191,7 @@ public class Main {
         Mesh shipMesh = Mesh.createSpaceship();
         Mesh waypointRing = Mesh.createOrbitCircle(36, 1.4f);
         Mesh prominenceMesh = Mesh.createProminences(26, 32);
-        AsteroidField asteroidField = new AsteroidField(1150, 1500);
+        asteroidField = new AsteroidField(1150, 1500);
         starSystem.initMeshes();
         ship.initTrail();
 
@@ -202,6 +218,7 @@ public class Main {
             float dt = (float) Math.min(0.05, now - lastTime);
             lastTime = now;
             float elapsed = (float) now;
+            currentElapsed = elapsed;
 
             frames++;
             if (now - fpsTimer >= 0.5) {
@@ -293,11 +310,13 @@ public class Main {
                 }
             }
 
-            if (ship.waypoint != null) {
-                Matrix4f wpView = new Matrix4f(view).translate(ship.waypoint);
-                lineShader.setMat4("uView", wpView);
-                lineShader.setVec3("uColor", 0.25f, 0.95f, 0.72f);
-                lineShader.setFloat("uOpacity", 0.85f);
+            if (selectedTarget != null) {
+                Vector3f tPos = selectedTarget.getPosition();
+                float ringScale = Math.max(1.2f, selectedTarget.radius * 1.45f) / 1.4f;
+                Matrix4f tgtView = new Matrix4f(view).translate(tPos).scale(ringScale);
+                lineShader.setMat4("uView", tgtView);
+                lineShader.setVec3("uColor", 0.30f, 0.90f, 1.00f);
+                lineShader.setFloat("uOpacity", 0.90f);
                 waypointRing.draw();
             }
             glDisable(GL_BLEND);
@@ -440,7 +459,7 @@ public class Main {
             bloom.endSceneAndComposite(1.15f);
 
             // ================= TACTICAL 2D HUD =================
-            hud.render(winWidth, winHeight, starSystem, ship, getFocusName(), currentFps);
+            hud.render(winWidth, winHeight, starSystem, ship, getFocusName(), selectedTarget, currentFps);
 
             glfwSwapBuffers(window);
         }

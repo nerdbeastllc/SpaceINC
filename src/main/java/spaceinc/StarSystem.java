@@ -166,6 +166,8 @@ public class StarSystem {
         public final Vector3f colorB;
         public final Vector3f colorC;
         public final Vector3f position = new Vector3f();
+        public final String category;
+        public final List<MineralRegistry.OreDeposit> deposits;
         public Mesh orbitMesh;
 
         public Moon(String name, int planetType, float orbitRadius, float startAngle,
@@ -181,6 +183,16 @@ public class StarSystem {
             this.colorA = colorA;
             this.colorB = colorB;
             this.colorC = colorC;
+            if (planetType == 6) {
+                this.category = "VOLCANIC MOON";
+            } else if ("TITAN".equals(name)) {
+                this.category = "HAZY HYDROCARBON MOON";
+            } else if (planetType == 7) {
+                this.category = "ICY OCEAN MOON";
+            } else {
+                this.category = "ROCKY / CRATERED MOON";
+            }
+            this.deposits = MineralRegistry.forMoon(name, planetType);
         }
     }
 
@@ -205,6 +217,22 @@ public class StarSystem {
         public final List<Moon> moons = new ArrayList<>();
         public Mesh orbitMesh;
         public Mesh ringMesh;
+
+        public String getCategory() {
+            if (isBinaryPluto) return "BINARY DWARF PLANET";
+            return switch (planetType) {
+                case 0 -> "TERRAN WORLD";
+                case 1 -> "GAS GIANT";
+                case 3 -> "VENUSIAN WORLD";
+                case 4 -> "MARTIAN TERRESTRIAL";
+                case 5 -> "ICE GIANT";
+                default -> "ROCKY TERRESTRIAL";
+            };
+        }
+
+        public List<MineralRegistry.OreDeposit> getDeposits() {
+            return MineralRegistry.forPlanet(name, planetType);
+        }
 
         public Planet(String name, int planetType, float orbitRadius, float startAngle,
                       float orbitSpeed, float radius, float axialTilt, float spinSpeed,
@@ -384,6 +412,62 @@ public class StarSystem {
                 }
             }
         }
+    }
+
+    public TargetInfo pickCelestial(Vector3f rayOrigin, Vector3f rayDir) {
+        TargetInfo best = null;
+        float bestT = Float.MAX_VALUE;
+        Vector3f oc = new Vector3f();
+
+        // 1. Check Central Star
+        oc.set(starPos).sub(rayOrigin);
+        float proj = oc.dot(rayDir);
+        if (proj > 0) {
+            float d2 = oc.lengthSquared() - proj * proj;
+            float r = starType.radius;
+            if (d2 <= r * r && proj < bestT) {
+                bestT = proj;
+                best = new TargetInfo(
+                    starType.displayName,
+                    "CENTRAL STAR",
+                    MineralRegistry.forStar(),
+                    "UNCLAIMED",
+                    r,
+                    () -> starPos
+                );
+            }
+        }
+
+        // 2. Check Planets & Moons (with slight distance-scaled pick padding so small bodies are easy to click)
+        for (Planet p : planets) {
+            float distCam = p.position.distance(rayOrigin);
+            float pr = Math.max(p.radius * 1.25f, distCam * 0.015f);
+            oc.set(p.position).sub(rayOrigin);
+            proj = oc.dot(rayDir);
+            if (proj > 0) {
+                float d2 = oc.lengthSquared() - proj * proj;
+                if (d2 <= pr * pr && proj < bestT) {
+                    bestT = proj;
+                    best = new TargetInfo(p.name, p.getCategory(), p.getDeposits(), "UNCLAIMED", p.radius, () -> p.position);
+                }
+            }
+
+            for (Moon m : p.moons) {
+                float mDistCam = m.position.distance(rayOrigin);
+                float mr = Math.max(m.radius * 1.8f, mDistCam * 0.013f);
+                oc.set(m.position).sub(rayOrigin);
+                proj = oc.dot(rayDir);
+                if (proj > 0) {
+                    float d2 = oc.lengthSquared() - proj * proj;
+                    if (d2 <= mr * mr && proj < bestT) {
+                        bestT = proj;
+                        best = new TargetInfo(m.name, m.category, m.deposits, "UNCLAIMED", m.radius, () -> m.position);
+                    }
+                }
+            }
+        }
+
+        return best;
     }
 
     public void dispose() {

@@ -58,9 +58,10 @@ public class IsometricCamera {
     }
 
     /**
-     * Intersects a screen-space mouse ray with the y=planeY ecliptic plane.
+     * Computes a 3D world-space ray (origin + normalized direction) from screen coordinates.
      */
-    public Vector3f screenToPlane(float mouseX, float mouseY, float screenW, float screenH, float planeY) {
+    public void screenToRay(float mouseX, float mouseY, float screenW, float screenH,
+                            Vector3f outOrigin, Vector3f outDir) {
         float ndcX = (2.0f * mouseX) / screenW - 1.0f;
         float ndcY = 1.0f - (2.0f * mouseY) / screenH;
 
@@ -70,11 +71,21 @@ public class IsometricCamera {
         nearPt.div(nearPt.w);
         farPt.div(farPt.w);
 
-        Vector3f dir = new Vector3f(farPt.x - nearPt.x, farPt.y - nearPt.y, farPt.z - nearPt.z).normalize();
+        outOrigin.set(nearPt.x, nearPt.y, nearPt.z);
+        outDir.set(farPt.x - nearPt.x, farPt.y - nearPt.y, farPt.z - nearPt.z).normalize();
+    }
+
+    /**
+     * Intersects a screen-space mouse ray with the y=planeY ecliptic plane.
+     */
+    public Vector3f screenToPlane(float mouseX, float mouseY, float screenW, float screenH, float planeY) {
+        Vector3f origin = new Vector3f();
+        Vector3f dir = new Vector3f();
+        screenToRay(mouseX, mouseY, screenW, screenH, origin, dir);
         if (Math.abs(dir.y) < 1e-5f) return null;
-        float t = (planeY - nearPt.y) / dir.y;
+        float t = (planeY - origin.y) / dir.y;
         if (t < 0) return null;
-        return new Vector3f(nearPt.x + dir.x * t, planeY, nearPt.z + dir.z * t);
+        return new Vector3f(origin.x + dir.x * t, planeY, origin.z + dir.z * t);
     }
 
     public Matrix4f getView() { return view; }
