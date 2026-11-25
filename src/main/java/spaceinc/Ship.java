@@ -14,7 +14,7 @@ import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
 public class Ship {
-    public final Vector3f position = new Vector3f(0f, 0f, 52f);
+    public final Vector3f position = new Vector3f(0f, 0f, 118f);
     public final Vector3f velocity = new Vector3f();
     public float yaw = (float) Math.PI; // Facing toward the star initially
     public float bank = 0f;
@@ -59,8 +59,8 @@ public class Ship {
             }
         }
 
-        float maxSpeed = boost ? 26.0f : 14.0f;
-        float accel = boost ? 24.0f : 12.0f;
+        float maxSpeed = boost ? 44.0f : 20.0f;
+        float accel = boost ? 38.0f : 18.0f;
 
         if (desiredDir.lengthSquared() > 0.01f) {
             float targetYaw = (float) Math.atan2(desiredDir.x, desiredDir.z);
@@ -131,7 +131,7 @@ public class Ship {
         lineShader.use();
         lineShader.setMat4("uView", view);
         lineShader.setMat4("uProjection", proj);
-        lineShader.setVec3("uColor", 0.25f, 0.78f, 1.85f);
+        lineShader.setVec3("uColor", 1.75f, 0.78f, 0.14f);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);

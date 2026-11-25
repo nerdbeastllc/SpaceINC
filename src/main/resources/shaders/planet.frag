@@ -9,7 +9,12 @@ uniform float uTime;
 uniform vec3 uStarPos;
 uniform vec3 uStarLightColor;
 uniform vec3 uCameraPos;
-uniform int uPlanetType; // 0 = Terran, 1 = Gas Giant, 2 = Moon
+uniform int uPlanetType;
+// 0 = Terran, 1 = Gas Giant, 2 = Cratered/Rocky, 3 = Venusian,
+// 4 = Martian, 5 = Ice Giant, 6 = Volcanic (Io), 7 = Icy/Hazy/Dwarf
+uniform vec3 uColorA;
+uniform vec3 uColorB;
+uniform vec3 uColorC;
 
 float hash31(vec3 p) {
     p = fract(p * vec3(443.8975, 397.2973, 491.1871));
@@ -65,19 +70,17 @@ void main() {
     float atmoStrength = 0.0;
 
     if (uPlanetType == 0) {
-        // TERRAN CONTINENTAL WORLD
+        // TERRAN (EARTH)
         float cont = fbm(p * 3.1 + vec3(1.7, 0.4, -2.3));
         float detail = fbm(p * 11.0);
         float height = cont + (detail - 0.5) * 0.22;
         float seaLevel = 0.51;
 
         if (height < seaLevel) {
-            // Deep ocean to shallow shelf
             float depth = clamp((seaLevel - height) * 5.5, 0.0, 1.0);
             surfaceColor = mix(vec3(0.05, 0.34, 0.56), vec3(0.015, 0.08, 0.24), depth);
             spec = pow(max(dot(N, H), 0.0), 48.0) * 0.65;
         } else {
-            // Land biomes + snow peaks + polar ice
             float elev = clamp((height - seaLevel) * 4.0, 0.0, 1.0);
             vec3 coast = vec3(0.16, 0.44, 0.18);
             vec3 highland = vec3(0.38, 0.34, 0.22);
@@ -85,54 +88,86 @@ void main() {
             surfaceColor = mix(coast, highland, smoothstep(0.15, 0.65, elev));
             surfaceColor = mix(surfaceColor, snow, smoothstep(0.68, 0.95, elev + abs(p.y) * 0.45));
 
-            // Night-side city lights on habitable lowlands
             float nightMask = smoothstep(0.04, -0.22, ndotl);
             float cityNoise = valueNoise3D(p * 46.0);
             float cityCluster = smoothstep(0.73, 0.88, cityNoise) * (1.0 - smoothstep(0.25, 0.65, elev));
             emissive += vec3(1.15, 0.78, 0.34) * cityCluster * nightMask * 0.9;
         }
 
-        // Polar ice caps
         float polar = smoothstep(0.78, 0.92, abs(p.y) + (detail - 0.5) * 0.12);
         surfaceColor = mix(surfaceColor, vec3(0.88, 0.93, 0.98), polar);
 
-        // Swirling cloud layer
-        float clouds = fbm(p * 4.8 + vec3(uTime * 0.025, 0.0, -uTime * 0.015));
+        float clouds = fbm(p * 4.8 + vec3(uTime * 0.02, 0.0, -uTime * 0.012));
         float cloudAlpha = smoothstep(0.50, 0.78, clouds) * 0.82;
         surfaceColor = mix(surfaceColor, vec3(0.95, 0.97, 1.0), cloudAlpha);
         spec *= (1.0 - cloudAlpha);
 
-        // Rayleigh atmospheric scattering rim
         atmoColor = vec3(0.24, 0.58, 1.00);
         atmoStrength = pow(1.0 - ndotv, 3.2) * (0.25 + 0.85 * smoothstep(-0.25, 0.45, ndotl));
     } else if (uPlanetType == 1) {
-        // RINGED GAS GIANT
-        float warp = fbm(p * 4.5 + vec3(uTime * 0.012, 0.0, 0.0));
-        float bands = sin((p.y + (warp - 0.5) * 0.24) * 26.0) * 0.5 + 0.5;
+        // GAS GIANT (JUPITER / SATURN)
+        float warp = fbm(p * 4.5 + vec3(uTime * 0.01, 0.0, 0.0));
+        float bands = sin((p.y + (warp - 0.5) * 0.22) * 26.0) * 0.5 + 0.5;
         float fineBands = fbm(vec3(p.x * 3.0, p.y * 16.0, p.z * 3.0) + warp * 0.8);
 
-        vec3 cream = vec3(0.86, 0.78, 0.66);
-        vec3 ochre = vec3(0.68, 0.44, 0.26);
-        vec3 slate = vec3(0.36, 0.40, 0.48);
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.25, 0.78, bands));
+        surfaceColor = mix(surfaceColor, uColorC, smoothstep(0.55, 0.88, fineBands) * 0.45);
 
-        surfaceColor = mix(ochre, cream, smoothstep(0.25, 0.78, bands));
-        surfaceColor = mix(surfaceColor, slate, smoothstep(0.55, 0.88, fineBands) * 0.45);
-
-        // Great storm vortex
+        // Optional Great Storm (when uColorC has warm red tint, e.g. Jupiter)
         vec3 stormCenter = normalize(vec3(0.7, -0.22, 0.65));
         float stormDist = length(p - stormCenter);
         float storm = exp(-stormDist * stormDist * 45.0);
-        surfaceColor = mix(surfaceColor, vec3(0.88, 0.34, 0.20), storm * 0.8);
+        surfaceColor = mix(surfaceColor, uColorC * 1.35, storm * 0.65);
 
-        atmoColor = vec3(0.75, 0.64, 0.52);
+        atmoColor = uColorA;
         atmoStrength = pow(1.0 - ndotv, 3.6) * (0.15 + 0.75 * smoothstep(-0.2, 0.5, ndotl));
+    } else if (uPlanetType == 3) {
+        // VENUSIAN (THICK SULFURIC CLOUDS)
+        float swirl = fbm(p * 3.2 + vec3(uTime * 0.015, 0.0, 0.0));
+        float streaks = fbm(vec3(p.x * 2.5, p.y * 8.5, p.z * 2.5) + swirl * 1.4);
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.25, 0.80, streaks));
+        atmoColor = uColorC;
+        atmoStrength = pow(1.0 - ndotv, 2.8) * (0.35 + 0.75 * smoothstep(-0.2, 0.5, ndotl));
+    } else if (uPlanetType == 4) {
+        // MARTIAN (DESERT + POLAR ICE)
+        float terrain = fbm(p * 4.2 + vec3(0.5, -1.2, 0.8));
+        float detail = fbm(p * 14.0);
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.30, 0.72, terrain + (detail - 0.5) * 0.25));
+        float polar = smoothstep(0.82, 0.94, abs(p.y) + (detail - 0.5) * 0.10);
+        surfaceColor = mix(surfaceColor, vec3(0.92, 0.94, 0.96), polar);
+        atmoColor = uColorC;
+        atmoStrength = pow(1.0 - ndotv, 3.8) * 0.35 * smoothstep(-0.15, 0.5, ndotl);
+    } else if (uPlanetType == 5) {
+        // ICE GIANT (URANUS / NEPTUNE)
+        float warp = fbm(p * 3.8 + vec3(uTime * 0.01, 0.0, 0.0));
+        float bands = sin((p.y + (warp - 0.5) * 0.14) * 18.0) * 0.5 + 0.5;
+        float wisps = smoothstep(0.68, 0.88, fbm(vec3(p.x * 4.0, p.y * 14.0, p.z * 4.0) + warp));
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.2, 0.8, bands));
+        surfaceColor = mix(surfaceColor, uColorC, wisps * 0.55);
+        atmoColor = uColorA;
+        atmoStrength = pow(1.0 - ndotv, 3.0) * (0.25 + 0.85 * smoothstep(-0.2, 0.5, ndotl));
+    } else if (uPlanetType == 6) {
+        // VOLCANIC (IO)
+        float crust = fbm(p * 5.0);
+        float fissures = 1.0 - abs(valueNoise3D(p * 11.0 + crust * 1.5) - 0.5) * 2.0;
+        float lava = smoothstep(0.84, 0.97, fissures);
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.3, 0.75, crust));
+        emissive += uColorC * lava * 1.45;
+    } else if (uPlanetType == 7) {
+        // ICY / HAZY / DWARF (EUROPA, ENCELADUS, TITAN, PLUTO)
+        float baseN = fbm(p * 4.8);
+        float cracks = 1.0 - abs(valueNoise3D(p * 14.0 + baseN * 1.2) - 0.5) * 2.0;
+        surfaceColor = mix(uColorB, uColorA, smoothstep(0.28, 0.78, baseN));
+        surfaceColor = mix(surfaceColor, uColorC, smoothstep(0.82, 0.96, cracks) * 0.55);
+        atmoColor = uColorC;
+        atmoStrength = pow(1.0 - ndotv, 3.4) * 0.40 * smoothstep(-0.15, 0.5, ndotl);
     } else {
-        // CRATERED MOON
-        float regolith = fbm(p * 7.5);
+        // CRATERED / ROCKY (MERCURY, LUNA, CALLISTO, MIMAS, CHARON)
+        float regolith = fbm(p * 6.5);
         float craters = abs(valueNoise3D(p * 18.0) - 0.5) * 2.0;
-        surfaceColor = mix(vec3(0.26, 0.27, 0.30), vec3(0.55, 0.54, 0.52), regolith * 0.7 + craters * 0.3);
-        atmoColor = vec3(0.45, 0.48, 0.55);
-        atmoStrength = pow(1.0 - ndotv, 4.5) * 0.15 * smoothstep(-0.1, 0.5, ndotl);
+        surfaceColor = mix(uColorB, uColorA, regolith * 0.7 + craters * 0.3);
+        atmoColor = uColorA;
+        atmoStrength = pow(1.0 - ndotv, 4.5) * 0.10 * smoothstep(-0.1, 0.5, ndotl);
     }
 
     vec3 ambient = surfaceColor * 0.035;

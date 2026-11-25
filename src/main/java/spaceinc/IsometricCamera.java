@@ -33,7 +33,7 @@ public class IsometricCamera {
         );
 
         view.identity().lookAt(eyePos, focusPos, new Vector3f(0f, 1f, 0f));
-        projection.identity().perspective((float) Math.toRadians(42.0), aspect, 0.3f, 2500.0f);
+        projection.identity().perspective((float) Math.toRadians(42.0), aspect, 0.3f, 9000.0f);
     }
 
     public void orbit(float deltaYaw, float deltaPitch) {
@@ -43,7 +43,7 @@ public class IsometricCamera {
 
     public void zoom(float scrollDelta) {
         float factor = (float) Math.pow(0.88, scrollDelta);
-        targetDistance = Math.max(8.0f, Math.min(280.0f, targetDistance * factor));
+        targetDistance = Math.max(4.5f, Math.min(2800.0f, targetDistance * factor));
     }
 
     public Vector3f getForwardXZ() {

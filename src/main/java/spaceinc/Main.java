@@ -27,10 +27,13 @@ public class Main {
     private final StarSystem starSystem = new StarSystem();
     private final Ship ship = new Ship();
 
-    private int focusIndex = 0; // 0=Ship, 1=Star, 2=Terran, 3=Gas Giant
-    private static final String[] FOCUS_NAMES = {
-        "PLAYER CORVETTE", "CENTRAL STAR", "TERRAN WORLD", "RINGED GAS GIANT"
-    };
+    private int focusIndex = 0; // 0=Ship, 1=Star, 2..10=Planets
+
+    private String getFocusName() {
+        if (focusIndex == 0) return "PLAYER CORVETTE";
+        if (focusIndex == 1) return "CENTRAL STAR";
+        return starSystem.planets.get(focusIndex - 2).name;
+    }
 
     public static void main(String[] args) {
         new Main().run();
@@ -134,7 +137,12 @@ public class Main {
                 int idx = (starSystem.starType.ordinal() + 1) % types.length;
                 starSystem.starType = types[idx];
             } else if (key == GLFW_KEY_TAB) {
-                focusIndex = (focusIndex + 1) % 4;
+                int total = 2 + starSystem.planets.size();
+                if ((mods & GLFW_MOD_SHIFT) != 0) {
+                    focusIndex = (focusIndex - 1 + total) % total;
+                } else {
+                    focusIndex = (focusIndex + 1) % total;
+                }
             }
         });
 
@@ -164,12 +172,11 @@ public class Main {
 
         Mesh sphereMesh = Mesh.createSphere(80, 140);
         Mesh quadMesh = Mesh.createQuad();
-        Mesh ringMesh = Mesh.createRing(128, 1.35f, 2.35f);
         Mesh shipMesh = Mesh.createSpaceship();
-        Mesh terranOrbit = Mesh.createOrbitCircle(180, starSystem.terranOrbitRadius);
-        Mesh giantOrbit = Mesh.createOrbitCircle(220, starSystem.giantOrbitRadius);
         Mesh waypointRing = Mesh.createOrbitCircle(36, 1.4f);
         Mesh prominenceMesh = Mesh.createProminences(26, 32);
+        AsteroidField asteroidField = new AsteroidField(1150, 1500);
+        starSystem.initMeshes();
         ship.initTrail();
 
         Shader skyboxShader = new Shader("shaders/skybox.vert", "shaders/skybox.frag");
@@ -178,6 +185,7 @@ public class Main {
         Shader coronaShader = new Shader("shaders/corona.vert", "shaders/corona.frag");
         Shader planetShader = new Shader("shaders/planet.vert", "shaders/planet.frag");
         Shader ringShader = new Shader("shaders/ring.vert", "shaders/ring.frag");
+        Shader asteroidShader = new Shader("shaders/asteroid.vert", "shaders/asteroid.frag");
         Shader shipShader = new Shader("shaders/ship.vert", "shaders/ship.frag");
         Shader lineShader = new Shader("shaders/line.vert", "shaders/line.frag");
 
@@ -230,12 +238,14 @@ public class Main {
             starSystem.update(dt);
             ship.update(dt, moveInput, boost);
 
-            Vector3f focusTarget = switch (focusIndex) {
-                case 1 -> starSystem.starPos;
-                case 2 -> starSystem.terranPos;
-                case 3 -> starSystem.giantPos;
-                default -> ship.position;
-            };
+            Vector3f focusTarget;
+            if (focusIndex == 0) {
+                focusTarget = ship.position;
+            } else if (focusIndex == 1) {
+                focusTarget = starSystem.starPos;
+            } else {
+                focusTarget = starSystem.planets.get(focusIndex - 2).barycenter;
+            }
             camera.update(dt, focusTarget, (float) fbWidth / fbHeight);
 
             Matrix4f view = camera.getView();
@@ -263,9 +273,25 @@ public class Main {
             lineShader.setMat4("uProjection", proj);
             lineShader.setInt("uUseAlphaAttr", 0);
             lineShader.setVec3("uColor", 0.22f, 0.45f, 0.72f);
-            lineShader.setFloat("uOpacity", 0.28f);
-            terranOrbit.draw();
-            giantOrbit.draw();
+            lineShader.setFloat("uOpacity", 0.11f);
+            for (StarSystem.Planet p : starSystem.planets) {
+                p.orbitMesh.draw();
+            }
+
+            // Moon orbit rings for the focused planet (or all if zoomed in close)
+            if (focusIndex >= 2) {
+                StarSystem.Planet fp = starSystem.planets.get(focusIndex - 2);
+                lineShader.setVec3("uColor", 0.35f, 0.68f, 0.85f);
+                lineShader.setFloat("uOpacity", 0.14f);
+                for (StarSystem.Moon m : fp.moons) {
+                    Matrix4f mOrbView = new Matrix4f(view)
+                        .translate(fp.isBinaryPluto ? fp.barycenter : fp.position)
+                        .rotateZ(fp.isBinaryPluto ? 0f : fp.axialTilt)
+                        .rotateX(fp.isBinaryPluto ? 0f : m.inclination);
+                    lineShader.setMat4("uView", mOrbView);
+                    m.orbitMesh.draw();
+                }
+            }
 
             if (ship.waypoint != null) {
                 Matrix4f wpView = new Matrix4f(view).translate(ship.waypoint);
@@ -313,7 +339,7 @@ public class Main {
             glDepthMask(true);
             glEnable(GL_CULL_FACE);
 
-            // 4. Planets & Moon
+            // 4. All Planets, Moons, & Planetary Rings
             planetShader.use();
             planetShader.setMat4("uView", view);
             planetShader.setMat4("uProjection", proj);
@@ -322,49 +348,56 @@ public class Main {
             planetShader.setVec3("uStarLightColor", st.lightColor);
             planetShader.setVec3("uCameraPos", camera.getEyePos());
 
-            // Terran World
-            planetShader.setInt("uPlanetType", 0);
-            planetShader.setMat4("uModel", new Matrix4f()
-                .translate(starSystem.terranPos)
-                .rotateY(elapsed * 0.12f)
-                .scale(starSystem.terranRadius));
-            sphereMesh.draw();
+            for (StarSystem.Planet p : starSystem.planets) {
+                planetShader.use();
+                planetShader.setInt("uPlanetType", p.planetType);
+                planetShader.setVec3("uColorA", p.colorA);
+                planetShader.setVec3("uColorB", p.colorB);
+                planetShader.setVec3("uColorC", p.colorC);
+                planetShader.setMat4("uModel", new Matrix4f()
+                    .translate(p.position)
+                    .rotateZ(p.axialTilt)
+                    .rotateY(elapsed * p.spinSpeed)
+                    .scale(p.radius));
+                sphereMesh.draw();
 
-            // Terran Moon
-            planetShader.setInt("uPlanetType", 2);
-            planetShader.setMat4("uModel", new Matrix4f()
-                .translate(starSystem.moonPos)
-                .rotateY(elapsed * 0.08f)
-                .scale(starSystem.moonRadius));
-            sphereMesh.draw();
+                for (StarSystem.Moon m : p.moons) {
+                    planetShader.setInt("uPlanetType", m.planetType);
+                    planetShader.setVec3("uColorA", m.colorA);
+                    planetShader.setVec3("uColorB", m.colorB);
+                    planetShader.setVec3("uColorC", m.colorC);
+                    planetShader.setMat4("uModel", new Matrix4f()
+                        .translate(m.position)
+                        .rotateY(elapsed * 0.05f)
+                        .scale(m.radius));
+                    sphereMesh.draw();
+                }
 
-            // Gas Giant
-            planetShader.setInt("uPlanetType", 1);
-            planetShader.setMat4("uModel", new Matrix4f()
-                .translate(starSystem.giantPos)
-                .rotateZ(0.24f)
-                .rotateY(elapsed * 0.06f)
-                .scale(starSystem.giantRadius));
-            sphereMesh.draw();
+                if (p.hasRings && p.ringMesh != null) {
+                    glDisable(GL_CULL_FACE);
+                    glEnable(GL_BLEND);
+                    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    ringShader.use();
+                    ringShader.setMat4("uModel", new Matrix4f()
+                        .translate(p.position)
+                        .rotateZ(p.axialTilt)
+                        .scale(p.radius));
+                    ringShader.setMat4("uView", view);
+                    ringShader.setMat4("uProjection", proj);
+                    ringShader.setVec3("uStarPos", starSystem.starPos);
+                    ringShader.setVec3("uStarLightColor", st.lightColor);
+                    ringShader.setVec3("uPlanetPos", p.position);
+                    ringShader.setFloat("uPlanetRadius", p.radius);
+                    p.ringMesh.draw();
+                    glDisable(GL_BLEND);
+                    glEnable(GL_CULL_FACE);
+                }
+            }
 
-            // Gas Giant Rings (double-sided, alpha blended)
-            glDisable(GL_CULL_FACE);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            ringShader.use();
-            ringShader.setMat4("uModel", new Matrix4f()
-                .translate(starSystem.giantPos)
-                .rotateZ(0.24f)
-                .scale(starSystem.giantRadius));
-            ringShader.setMat4("uView", view);
-            ringShader.setMat4("uProjection", proj);
-            ringShader.setVec3("uStarPos", starSystem.starPos);
-            ringShader.setVec3("uStarLightColor", st.lightColor);
-            ringShader.setVec3("uPlanetPos", starSystem.giantPos);
-            ringShader.setFloat("uPlanetRadius", starSystem.giantRadius);
-            ringMesh.draw();
-            glDisable(GL_BLEND);
-            glEnable(GL_CULL_FACE);
+            // 4b. Instanced Asteroid Belt & Oort Cloud (single draw call)
+            asteroidShader.use();
+            asteroidShader.setVec3("uCameraPos", camera.getEyePos());
+            asteroidField.draw(asteroidShader, view, proj, elapsed, starSystem);
 
             // 5. Player Starship & Engine Trail
             shipShader.use();
@@ -407,7 +440,7 @@ public class Main {
             bloom.endSceneAndComposite(1.15f);
 
             // ================= TACTICAL 2D HUD =================
-            hud.render(winWidth, winHeight, starSystem, ship, FOCUS_NAMES[focusIndex], currentFps);
+            hud.render(winWidth, winHeight, starSystem, ship, getFocusName(), currentFps);
 
             glfwSwapBuffers(window);
         }
@@ -415,12 +448,11 @@ public class Main {
         // Cleanup
         sphereMesh.dispose();
         quadMesh.dispose();
-        ringMesh.dispose();
         shipMesh.dispose();
-        terranOrbit.dispose();
-        giantOrbit.dispose();
         waypointRing.dispose();
         prominenceMesh.dispose();
+        asteroidField.dispose();
+        starSystem.dispose();
         ship.dispose();
 
         skyboxShader.dispose();
@@ -429,6 +461,7 @@ public class Main {
         coronaShader.dispose();
         planetShader.dispose();
         ringShader.dispose();
+        asteroidShader.dispose();
         shipShader.dispose();
         lineShader.dispose();
         bloom.dispose();
