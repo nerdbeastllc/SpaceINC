@@ -460,7 +460,7 @@ public class Main {
                 }
 
                 if (galaxyMapOpen) {
-                    float mw = 680, mh = 430;
+                    float mw = GalaxyMap.panelWidth(winWidth), mh = GalaxyMap.panelHeight(winHeight);
                     float mapCx = (winWidth - mw) * 0.5f + mw * 0.5f + mapPanX;
                     float mapCy = (winHeight - mh) * 0.5f + mh * 0.54f + mapPanY;
                     float scaleX = mw * 0.36f * mapZoom, scaleY = mh * 0.30f * mapZoom;
@@ -1174,7 +1174,7 @@ public class Main {
                 glEnable(GL_SCISSOR_TEST);
                 float scaleFactorX = (float) fbWidth / winWidth;
                 float scaleFactorY = (float) fbHeight / winHeight;
-                float mw = 680f, mh = 430f;
+                float mw = GalaxyMap.panelWidth(winWidth), mh = GalaxyMap.panelHeight(winHeight);
                 float mx = (winWidth - mw) * 0.5f;
                 float my = (winHeight - mh) * 0.5f;
                 glScissor(

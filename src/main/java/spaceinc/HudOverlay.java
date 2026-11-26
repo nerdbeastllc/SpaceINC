@@ -173,8 +173,8 @@ public class HudOverlay {
 
         // Centered Galaxy Map Overlay [M]
         if (galaxyMapOpen) {
-            float mw = 680;
-            float mh = 430;
+            float mw = GalaxyMap.panelWidth(width);
+            float mh = GalaxyMap.panelHeight(height);
             float mx = (width - mw) * 0.5f;
             float my = (height - mh) * 0.5f;
             drawRect(mx, my, mw, mh, 0.02f, 0.04f, 0.08f, 0.94f);

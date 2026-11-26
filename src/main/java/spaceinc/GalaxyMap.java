@@ -9,6 +9,12 @@ import java.util.List;
  */
 public class GalaxyMap {
 
+    /** Fraction of the window the galaxy map panel covers on each axis. */
+    public static final float PANEL_SCREEN_FRACTION = 0.8f;
+
+    public static float panelWidth(float winWidth)   { return winWidth * PANEL_SCREEN_FRACTION; }
+    public static float panelHeight(float winHeight) { return winHeight * PANEL_SCREEN_FRACTION; }
+
     public static class SystemNode {
         public final String id;
         public final String name;
