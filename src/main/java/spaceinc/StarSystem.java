@@ -501,8 +501,11 @@ public class StarSystem {
         }
     }
 
+    /** Global multiplier on all orbital motion (planets, moons, stations, asteroids). */
+    public static final float ORBIT_TIME_SCALE = 0.1f;
+
     public void update(float dt) {
-        float orbitDt = dt / 3.0f;
+        float orbitDt = dt / 3.0f * ORBIT_TIME_SCALE;
         for (Planet p : planets) {
             p.angle += orbitDt * p.orbitSpeed;
             p.barycenter.set(
