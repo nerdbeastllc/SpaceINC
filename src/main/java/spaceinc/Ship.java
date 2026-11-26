@@ -21,6 +21,17 @@ public class Ship {
     public float thrustLevel = 0f;
 
     public Vector3f waypoint = null;
+    public final ShipInventory inventory = new ShipInventory();
+
+    public boolean hitTest(Vector3f rayOrigin, Vector3f rayDir) {
+        Vector3f oc = new Vector3f(position).sub(rayOrigin);
+        float proj = oc.dot(rayDir);
+        if (proj < 0) return false;
+        float distCam = position.distance(rayOrigin);
+        float pickR = Math.max(2.2f, distCam * 0.024f);
+        float d2 = oc.lengthSquared() - proj * proj;
+        return d2 <= pickR * pickR;
+    }
 
     private static final int MAX_TRAIL = 90;
     private final Deque<Vector3f> trailPoints = new ArrayDeque<>();

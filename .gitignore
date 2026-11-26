@@ -1,6 +1,7 @@
 out/
 build/
 .gradle/
+saves/
 .DS_Store
 *.class
 *.log

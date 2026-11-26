@@ -343,6 +343,76 @@ public class Mesh {
         return buildIndexed(toFloatArray(v), toIntArray(idx), GL_TRIANGLES);
     }
 
+    /**
+     * Sleek orbital NPC Market Station: central hub spire + octagonal trade ring + glowing docking beacons.
+     * UV.x: 0.1 = armor hull, 0.5 = dark core/glass, 0.9 = emissive docking beacons.
+     */
+    public static Mesh createStation() {
+        List<Float> v = new ArrayList<>();
+        List<Integer> idx = new ArrayList<>();
+
+        // Central vertical spire (octagonal prism)
+        int sides = 8;
+        float spireR = 0.45f;
+        float topY = 1.6f;
+        float botY = -1.6f;
+        for (int i = 0; i < sides; i++) {
+            float a0 = (float) (i * 2.0 * Math.PI / sides);
+            float a1 = (float) ((i + 1) * 2.0 * Math.PI / sides);
+            float[] t0 = { (float) Math.cos(a0) * spireR, topY, (float) Math.sin(a0) * spireR };
+            float[] t1 = { (float) Math.cos(a1) * spireR, topY, (float) Math.sin(a1) * spireR };
+            float[] b0 = { (float) Math.cos(a0) * spireR, botY, (float) Math.sin(a0) * spireR };
+            float[] b1 = { (float) Math.cos(a1) * spireR, botY, (float) Math.sin(a1) * spireR };
+            addQuad(v, idx, t0, t1, b1, b0, 0.5f);
+        }
+
+        // Outer trade ring (8-sided torus-like ring at y=0)
+        float rIn = 1.45f, rOut = 2.15f, h = 0.24f;
+        for (int i = 0; i < sides; i++) {
+            float a0 = (float) (i * 2.0 * Math.PI / sides);
+            float a1 = (float) ((i + 1) * 2.0 * Math.PI / sides);
+            float c0 = (float) Math.cos(a0), s0 = (float) Math.sin(a0);
+            float c1 = (float) Math.cos(a1), s1 = (float) Math.sin(a1);
+
+            float[] it0 = { c0 * rIn, h, s0 * rIn };
+            float[] it1 = { c1 * rIn, h, s1 * rIn };
+            float[] ot0 = { c0 * rOut, h, s0 * rOut };
+            float[] ot1 = { c1 * rOut, h, s1 * rOut };
+            float[] ib0 = { c0 * rIn, -h, s0 * rIn };
+            float[] ib1 = { c1 * rIn, -h, s1 * rIn };
+            float[] ob0 = { c0 * rOut, -h, s0 * rOut };
+            float[] ob1 = { c1 * rOut, -h, s1 * rOut };
+
+            addQuad(v, idx, it0, ot0, ot1, it1, 0.1f); // top
+            addQuad(v, idx, ib1, ob1, ob0, ib0, 0.1f); // bottom
+            addQuad(v, idx, ot0, ob0, ob1, ot1, 0.1f); // outer
+            addQuad(v, idx, it1, ib1, ib0, it0, 0.5f); // inner
+
+            // Emissive docking beacon strip on every second segment
+            if (i % 2 == 0) {
+                float[] bt0 = { c0 * (rOut + 0.04f), h * 0.45f, s0 * (rOut + 0.04f) };
+                float[] bt1 = { c1 * (rOut + 0.04f), h * 0.45f, s1 * (rOut + 0.04f) };
+                float[] bb0 = { c0 * (rOut + 0.04f), -h * 0.45f, s0 * (rOut + 0.04f) };
+                float[] bb1 = { c1 * (rOut + 0.04f), -h * 0.45f, s1 * (rOut + 0.04f) };
+                addQuad(v, idx, bt0, bb0, bb1, bt1, 0.9f);
+            }
+        }
+
+        // 4 Spokes connecting central spire to trade ring
+        for (int k = 0; k < 4; k++) {
+            float a = (float) (k * Math.PI * 0.5);
+            float c = (float) Math.cos(a), s = (float) Math.sin(a);
+            float px = -s * 0.14f, pz = c * 0.14f;
+            float[] s0 = { c * spireR + px, 0.12f, s * spireR + pz };
+            float[] s1 = { c * spireR - px, 0.12f, s * spireR - pz };
+            float[] e0 = { c * rIn + px, 0.12f, s * rIn + pz };
+            float[] e1 = { c * rIn - px, 0.12f, s * rIn - pz };
+            addQuad(v, idx, s0, e0, e1, s1, 0.5f);
+        }
+
+        return buildIndexed(toFloatArray(v), toIntArray(idx), GL_TRIANGLES);
+    }
+
     private static void addQuad(List<Float> v, List<Integer> idx, float[] a, float[] b, float[] c, float[] d, float mat) {
         addTri(v, idx, a, b, c, mat);
         addTri(v, idx, a, c, d, mat);

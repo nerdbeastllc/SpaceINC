@@ -129,7 +129,7 @@ public class AsteroidField {
         for (int i = 0; i < beltCount; i++) {
             float r = 228.0f + rng.nextFloat() * 44.0f;
             float angle = rng.nextFloat() * 2.0f * (float) Math.PI;
-            float speed = 0.0052f + rng.nextFloat() * 0.0022f;
+            float speed = (0.0052f + rng.nextFloat() * 0.0022f) / 3.0f;
             float yOff = (rng.nextFloat() - 0.5f) * 9.0f;
 
             float baseScale = 0.28f + (float) Math.pow(rng.nextFloat(), 2.4) * 0.85f;
@@ -161,7 +161,7 @@ public class AsteroidField {
             float r = 910.0f + rng.nextFloat() * 315.0f;
             float yOff = (rng.nextFloat() - 0.5f) * 18.0f;
             float angle = rng.nextFloat() * 2.0f * (float) Math.PI;
-            float speed = 0.00035f + rng.nextFloat() * 0.00035f;
+            float speed = (0.00035f + rng.nextFloat() * 0.00035f) / 3.0f;
 
             float baseScale = 0.45f + (float) Math.pow(rng.nextFloat(), 2.0) * 1.15f;
             float sx = baseScale * (0.75f + rng.nextFloat() * 0.6f);
@@ -242,11 +242,17 @@ public class AsteroidField {
         return bestIdx;
     }
 
+    private boolean isCoreFederation = true;
+
+    public void setCoreFederation(boolean isCoreFederation) {
+        this.isCoreFederation = isCoreFederation;
+    }
+
     public TargetInfo getTargetInfo(int idx, java.util.function.Supplier<Float> timeSupplier) {
         boolean comet = isComet[idx];
         String name = comet ? String.format("OORT COMET #%04d", idx + 1) : String.format("BELT ASTEROID #%04d", idx + 1);
         String cat = comet ? "ICY PLANETESIMAL" : "SILICATE / METALLIC ASTEROID";
-        return new TargetInfo(name, cat, MineralRegistry.forAsteroid(idx, comet), "UNCLAIMED", pickRadius[idx], () -> {
+        return new TargetInfo(name, cat, MineralRegistry.forAsteroid(idx, comet, isCoreFederation), "UNCLAIMED", pickRadius[idx], () -> {
             float a = startAngle[idx] + timeSupplier.get() * orbitSpeed[idx];
             return new Vector3f((float) Math.cos(a) * orbitR[idx], yOffset[idx], (float) Math.sin(a) * orbitR[idx]);
         });

@@ -73,10 +73,12 @@ public final class MineralRegistry {
     public static class OreDeposit {
         public final OreType ore;
         public final int percent;
+        public final int purityPercent;
 
-        public OreDeposit(OreType ore, int percent) {
+        public OreDeposit(OreType ore, int percent, int purityPercent) {
             this.ore = ore;
             this.percent = percent;
+            this.purityPercent = purityPercent;
         }
     }
 
@@ -103,78 +105,80 @@ public final class MineralRegistry {
 
     private MineralRegistry() {}
 
-    public static List<OreDeposit> forStar() {
+    public static List<OreDeposit> forStar(boolean isCoreFederation) {
+        int purity = isCoreFederation ? 18 : 82;
         return Arrays.asList(
-            new OreDeposit(OreType.GAS_HARVEST, 96),
-            new OreDeposit(OreType.WATER_ICE, 4)
+            new OreDeposit(OreType.GAS_HARVEST, 96, purity),
+            new OreDeposit(OreType.WATER_ICE, 4, purity)
         );
     }
 
-    public static List<OreDeposit> forPlanet(String name, int planetType) {
+    public static List<OreDeposit> forPlanet(String name, int planetType, boolean isCoreFederation) {
+        int basePurity = isCoreFederation ? 14 : 68;
         if ("EARTH".equals(name)) {
             return Arrays.asList(
-                new OreDeposit(OreType.HEMATITE, 32),
-                new OreDeposit(OreType.BAUXITE, 26),
-                new OreDeposit(OreType.WATER_ICE, 24),
-                new OreDeposit(OreType.CHALCOPYRITE, 18)
+                new OreDeposit(OreType.HEMATITE, 32, 18),
+                new OreDeposit(OreType.BAUXITE, 26, 21),
+                new OreDeposit(OreType.WATER_ICE, 24, 24),
+                new OreDeposit(OreType.CHALCOPYRITE, 18, 15)
             );
         }
         if ("MERCURY".equals(name)) {
             return Arrays.asList(
-                new OreDeposit(OreType.HEMATITE, 44),
-                new OreDeposit(OreType.ILMENITE, 28),
-                new OreDeposit(OreType.PENTLANDITE, 18),
-                new OreDeposit(OreType.ELECTRUM, 10)
+                new OreDeposit(OreType.HEMATITE, 44, 22),
+                new OreDeposit(OreType.ILMENITE, 28, 16),
+                new OreDeposit(OreType.PENTLANDITE, 18, 14),
+                new OreDeposit(OreType.ELECTRUM, 10, 12)
             );
         }
         if ("VENUS".equals(name)) {
             return Arrays.asList(
-                new OreDeposit(OreType.BRIMSTONE, 40),
-                new OreDeposit(OreType.QUARTZ, 28),
-                new OreDeposit(OreType.BAUXITE, 20),
-                new OreDeposit(OreType.FLUORITE, 12)
+                new OreDeposit(OreType.BRIMSTONE, 40, 20),
+                new OreDeposit(OreType.QUARTZ, 28, 18),
+                new OreDeposit(OreType.BAUXITE, 20, 15),
+                new OreDeposit(OreType.FLUORITE, 12, 14)
             );
         }
         if ("MARS".equals(name)) {
             return Arrays.asList(
-                new OreDeposit(OreType.HEMATITE, 42),
-                new OreDeposit(OreType.QUARTZ, 24),
-                new OreDeposit(OreType.WATER_ICE, 20),
-                new OreDeposit(OreType.SPODUMENE, 14)
+                new OreDeposit(OreType.HEMATITE, 42, 21),
+                new OreDeposit(OreType.QUARTZ, 24, 19),
+                new OreDeposit(OreType.WATER_ICE, 20, 16),
+                new OreDeposit(OreType.SPODUMENE, 14, 13)
             );
         }
         if (planetType == 1 || planetType == 5) {
             return Arrays.asList(
-                new OreDeposit(OreType.GAS_HARVEST, 78),
-                new OreDeposit(OreType.WATER_ICE, 14),
-                new OreDeposit(OreType.GRAPHITE, 8)
+                new OreDeposit(OreType.GAS_HARVEST, 78, basePurity + 4),
+                new OreDeposit(OreType.WATER_ICE, 14, basePurity),
+                new OreDeposit(OreType.GRAPHITE, 8, basePurity + 2)
             );
         }
-        return generateSeeded(name.hashCode(), ROCKY_ORES, 4);
+        return generateSeeded(name.hashCode(), ROCKY_ORES, 4, isCoreFederation);
     }
 
-    public static List<OreDeposit> forMoon(String name, int planetType) {
+    public static List<OreDeposit> forMoon(String name, int planetType, boolean isCoreFederation) {
         if ("TITAN".equals(name)) {
             return Arrays.asList(
-                new OreDeposit(OreType.GRAPHITE, 42),
-                new OreDeposit(OreType.WATER_ICE, 36),
-                new OreDeposit(OreType.GAS_HARVEST, 22)
+                new OreDeposit(OreType.GRAPHITE, 42, 22),
+                new OreDeposit(OreType.WATER_ICE, 36, 20),
+                new OreDeposit(OreType.GAS_HARVEST, 22, 16)
             );
         }
         if (planetType == 6) {
-            return generateSeeded(name.hashCode(), VOLCANIC_ORES, 4);
+            return generateSeeded(name.hashCode(), VOLCANIC_ORES, 4, isCoreFederation);
         }
         if (planetType == 7) {
-            return generateSeeded(name.hashCode(), ICY_ORES, 3);
+            return generateSeeded(name.hashCode(), ICY_ORES, 3, isCoreFederation);
         }
-        return generateSeeded(name.hashCode(), ROCKY_ORES, 3);
+        return generateSeeded(name.hashCode(), ROCKY_ORES, 3, isCoreFederation);
     }
 
-    public static List<OreDeposit> forAsteroid(int index, boolean isComet) {
-        return generateSeeded(index * 7919L + (isComet ? 999L : 17L), isComet ? ICY_ORES : ROCKY_ORES, 3);
+    public static List<OreDeposit> forAsteroid(int index, boolean isComet, boolean isCoreFederation) {
+        return generateSeeded(index * 7919L + (isComet ? 999L : 17L), isComet ? ICY_ORES : ROCKY_ORES, 3, isCoreFederation);
     }
 
-    private static List<OreDeposit> generateSeeded(long seed, OreType[] pool, int count) {
+    private static List<OreDeposit> generateSeeded(long seed, OreType[] pool, int count, boolean isCoreFederation) {
         Random rng = new Random(seed);
         List<OreType> chosen = new ArrayList<>();
         while (chosen.size() < count && chosen.size() < pool.length) {
@@ -194,7 +198,8 @@ public final class MineralRegistry {
         for (int i = 0; i < chosen.size(); i++) {
             int pct = (i == chosen.size() - 1) ? (100 - assigned) : Math.max(5, (weights[i] * 100) / sum);
             assigned += pct;
-            result.add(new OreDeposit(chosen.get(i), pct));
+            int purity = isCoreFederation ? (12 + rng.nextInt(15)) : (65 + rng.nextInt(31));
+            result.add(new OreDeposit(chosen.get(i), pct, purity));
         }
         return result;
     }

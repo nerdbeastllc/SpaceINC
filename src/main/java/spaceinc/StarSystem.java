@@ -4,7 +4,9 @@ import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 
 public class StarSystem {
     public enum StarType {
@@ -167,7 +169,7 @@ public class StarSystem {
         public final Vector3f colorC;
         public final Vector3f position = new Vector3f();
         public final String category;
-        public final List<MineralRegistry.OreDeposit> deposits;
+        public List<MineralRegistry.OreDeposit> deposits;
         public Mesh orbitMesh;
 
         public Moon(String name, int planetType, float orbitRadius, float startAngle,
@@ -192,7 +194,7 @@ public class StarSystem {
             } else {
                 this.category = "ROCKY / CRATERED MOON";
             }
-            this.deposits = MineralRegistry.forMoon(name, planetType);
+            this.deposits = MineralRegistry.forMoon(name, planetType, true);
         }
     }
 
@@ -230,8 +232,8 @@ public class StarSystem {
             };
         }
 
-        public List<MineralRegistry.OreDeposit> getDeposits() {
-            return MineralRegistry.forPlanet(name, planetType);
+        public List<MineralRegistry.OreDeposit> getDeposits(boolean isCoreFederation) {
+            return MineralRegistry.forPlanet(name, planetType, isCoreFederation);
         }
 
         public Planet(String name, int planetType, float orbitRadius, float startAngle,
@@ -260,11 +262,141 @@ public class StarSystem {
         }
     }
 
+    public static class JumpGate {
+        public final String targetSystemId;
+        public final String targetSystemName;
+        public final boolean isFrontier;
+        public final Vector3f position = new Vector3f();
+        public final float radius = 3.2f;
+
+        public JumpGate(String targetSystemId, String targetSystemName, boolean isFrontier, Vector3f pos) {
+            this.targetSystemId = targetSystemId;
+            this.targetSystemName = targetSystemName;
+            this.isFrontier = isFrontier;
+            this.position.set(pos);
+        }
+    }
+
+    public static class MarketStation {
+        public final String id;
+        public final String name;
+        public final Planet hostPlanet;
+        public final float orbitRadius;
+        public float angle;
+        public final float orbitSpeed = 0.045f;
+        public final float radius = 2.4f;
+        public final Vector3f position = new Vector3f();
+
+        public MarketStation(String id, String name, Planet hostPlanet, float orbitRadius, float startAngle) {
+            this.id = id;
+            this.name = name;
+            this.hostPlanet = hostPlanet;
+            this.orbitRadius = orbitRadius;
+            this.angle = startAngle;
+        }
+    }
+
+    public String systemName = "SOL SYSTEM";
+    public boolean isCoreFederation = true;
     public StarType starType = StarType.G_SOL_YELLOW;
     public final Vector3f starPos = new Vector3f(0f, 0f, 0f);
     public final List<Planet> planets = new ArrayList<>();
+    public final List<JumpGate> jumpGates = new ArrayList<>();
+    public final List<MarketStation> marketStations = new ArrayList<>();
 
     public StarSystem() {
+        buildSolSystem();
+    }
+
+    public void loadSystem(GalaxyMap.SystemNode node, GalaxyMap map) {
+        dispose();
+        planets.clear();
+        jumpGates.clear();
+        marketStations.clear();
+
+        this.systemName = node.name;
+        this.isCoreFederation = node.isCoreFederation;
+        this.starType = node.starType;
+
+        if ("SOL".equals(node.id)) {
+            buildSolSystem();
+        } else {
+            buildProceduralSystem(node);
+        }
+
+        // Update moon deposit purity to match this system's Core vs Frontier tier
+        for (Planet p : planets) {
+            for (Moon m : p.moons) {
+                m.deposits = MineralRegistry.forMoon(m.name, m.planetType, isCoreFederation);
+            }
+        }
+
+        // Spawn Jump Gates & NPC Market Station in Core Federated Systems
+        if (node.isCoreFederation) {
+            if (!planets.isEmpty()) {
+                Planet host = ("SOL".equals(node.id) && planets.size() > 2) ? planets.get(2) : planets.get(0);
+                marketStations.add(new MarketStation(
+                    node.id + "_MARKET",
+                    node.id + " TRADE EXCHANGE",
+                    host,
+                    host.radius * 3.8f + 3.5f,
+                    2.2f
+                ));
+            }
+            float lastPlanetOrbit = planets.isEmpty() ? 100.0f : planets.get(planets.size() - 1).orbitRadius;
+            float minGateR = lastPlanetOrbit + 35.0f;
+            float maxGateR = Math.max(minGateR + 30.0f, 880.0f);
+
+            int n = node.gateLinks.size();
+            for (int i = 0; i < n; i++) {
+                String linkId = node.gateLinks.get(i);
+                GalaxyMap.SystemNode dest = map.findById(linkId);
+                float angle = 0.8f + (float) (i * (2.0 * Math.PI / Math.max(1, n)));
+                float dist = minGateR + (maxGateR - minGateR) * ((i + 1.0f) / (n + 1.0f));
+                Vector3f pos = new Vector3f((float) Math.cos(angle) * dist, 0f, (float) Math.sin(angle) * dist);
+                jumpGates.add(new JumpGate(dest.id, dest.name, !dest.isCoreFederation, pos));
+            }
+        }
+
+        initMeshes();
+    }
+
+    private void buildProceduralSystem(GalaxyMap.SystemNode node) {
+        Random rng = new Random(node.seed);
+        int count = 4 + rng.nextInt(4); // 4..7 planets
+        float r = 65f + rng.nextFloat() * 15f;
+
+        for (int i = 0; i < count; i++) {
+            int pType = (i == 0) ? (rng.nextBoolean() ? 2 : 4)
+                : (i >= count - 2 ? (rng.nextBoolean() ? 1 : 5) : (rng.nextInt(4) == 0 ? 0 : (rng.nextBoolean() ? 3 : 4)));
+            float radius = (pType == 1) ? (4.8f + rng.nextFloat() * 2.5f)
+                : (pType == 5 ? (3.5f + rng.nextFloat() * 1.4f) : (1.2f + rng.nextFloat() * 1.4f));
+            float tilt = (pType == 5 && rng.nextBoolean()) ? 1.55f : rng.nextFloat() * 0.45f;
+            boolean rings = (pType == 1 || pType == 5) && rng.nextFloat() < 0.45f;
+
+            Vector3f cA = new Vector3f(0.4f + rng.nextFloat() * 0.55f, 0.35f + rng.nextFloat() * 0.55f, 0.3f + rng.nextFloat() * 0.6f);
+            Vector3f cB = new Vector3f(cA.x * 0.5f, cA.y * 0.5f, cA.z * 0.5f);
+            Vector3f cC = new Vector3f(0.75f + rng.nextFloat() * 0.25f, 0.75f + rng.nextFloat() * 0.25f, 0.75f + rng.nextFloat() * 0.25f);
+
+            String pName = node.id + "-" + (i + 1);
+            Planet p = new Planet(pName, pType, r, rng.nextFloat() * 6.28f,
+                0.022f / (1.0f + i * 0.7f), radius, tilt, 0.08f + rng.nextFloat() * 0.14f,
+                rings, false, 0f, cA, cB, cC);
+
+            int moonCount = (pType == 1 || pType == 5) ? (2 + rng.nextInt(3)) : (rng.nextFloat() < 0.45f ? 1 : 0);
+            for (int m = 0; m < moonCount; m++) {
+                int mType = (m == 0 && pType == 1 && rng.nextBoolean()) ? 6 : (rng.nextBoolean() ? 7 : 2);
+                p.addMoon(new Moon(pName + " " + (char) ('A' + m), mType,
+                    radius * (1.8f + m * 0.7f), rng.nextFloat() * 6.28f,
+                    0.06f + rng.nextFloat() * 0.08f, (rng.nextFloat() - 0.5f) * 0.25f,
+                    0.28f + rng.nextFloat() * 0.42f, cA, cB, cC));
+            }
+            planets.add(p);
+            r += 58f + rng.nextFloat() * 48f;
+        }
+    }
+
+    private void buildSolSystem() {
         // 1. Mercury
         planets.add(new Planet("MERCURY", 2, 60f, 0.4f, 0.024f, 1.05f, 0.01f, 0.03f,
             false, false, 0f,
@@ -370,8 +502,9 @@ public class StarSystem {
     }
 
     public void update(float dt) {
+        float orbitDt = dt / 3.0f;
         for (Planet p : planets) {
-            p.angle += dt * p.orbitSpeed;
+            p.angle += orbitDt * p.orbitSpeed;
             p.barycenter.set(
                 (float) Math.cos(p.angle) * p.orbitRadius,
                 0f,
@@ -381,7 +514,7 @@ public class StarSystem {
             if (p.isBinaryPluto && !p.moons.isEmpty()) {
                 // Binary dwarf planet dance around shared barycenter
                 Moon charon = p.moons.get(0);
-                charon.angle += dt * charon.orbitSpeed;
+                charon.angle += orbitDt * charon.orbitSpeed;
                 float cosA = (float) Math.cos(charon.angle);
                 float sinA = (float) Math.sin(charon.angle);
                 // Pluto on one side of barycenter, Charon on the opposite side
@@ -401,7 +534,7 @@ public class StarSystem {
                 Matrix4f tiltMat = new Matrix4f().rotateZ(p.axialTilt);
                 Vector3f localOffset = new Vector3f();
                 for (Moon m : p.moons) {
-                    m.angle += dt * m.orbitSpeed;
+                    m.angle += orbitDt * m.orbitSpeed;
                     localOffset.set(
                         (float) Math.cos(m.angle) * m.orbitRadius,
                         (float) Math.sin(m.angle) * m.orbitRadius * (float) Math.sin(m.inclination),
@@ -411,6 +544,15 @@ public class StarSystem {
                     m.position.set(p.position).add(localOffset);
                 }
             }
+        }
+
+        for (MarketStation ms : marketStations) {
+            ms.angle += orbitDt * ms.orbitSpeed;
+            ms.position.set(
+                ms.hostPlanet.position.x + (float) Math.cos(ms.angle) * ms.orbitRadius,
+                0.8f,
+                ms.hostPlanet.position.z + (float) Math.sin(ms.angle) * ms.orbitRadius
+            );
         }
     }
 
@@ -430,11 +572,56 @@ public class StarSystem {
                 best = new TargetInfo(
                     starType.displayName,
                     "CENTRAL STAR",
-                    MineralRegistry.forStar(),
-                    "UNCLAIMED",
+                    MineralRegistry.forStar(isCoreFederation),
+                    isCoreFederation ? "FEDERATION CORE" : "UNCLAIMED",
                     r,
                     () -> starPos
                 );
+            }
+        }
+
+        // 1b. Check Jump Gates
+        for (JumpGate g : jumpGates) {
+            float gDistCam = g.position.distance(rayOrigin);
+            float gr = Math.max(g.radius * 1.6f, gDistCam * 0.018f);
+            oc.set(g.position).sub(rayOrigin);
+            proj = oc.dot(rayDir);
+            if (proj > 0) {
+                float d2 = oc.lengthSquared() - proj * proj;
+                if (d2 <= gr * gr && proj < bestT) {
+                    bestT = proj;
+                    String gName = (g.isFrontier ? "FRONTIER GATE -> " : "FEDERATION GATE -> ") + g.targetSystemName;
+                    String gCat = g.isFrontier ? "LONG-RANGE JUMP GATE [PRESS J]" : "STARGATE CONDUIT [PRESS J]";
+                    best = new TargetInfo(
+                        gName, gCat, Collections.emptyList(),
+                        g.isFrontier ? "FRONTIER LINK" : "FEDERATION",
+                        g.radius, g.targetSystemId, () -> g.position
+                    );
+                }
+            }
+        }
+
+        // 1c. Check NPC Market Stations
+        for (MarketStation ms : marketStations) {
+            float sDistCam = ms.position.distance(rayOrigin);
+            float sr = Math.max(ms.radius * 1.5f, sDistCam * 0.018f);
+            oc.set(ms.position).sub(rayOrigin);
+            proj = oc.dot(rayDir);
+            if (proj > 0) {
+                float d2 = oc.lengthSquared() - proj * proj;
+                if (d2 <= sr * sr && proj < bestT) {
+                    bestT = proj;
+                    best = new TargetInfo(
+                        ms.name,
+                        "NPC MARKET STATION",
+                        Collections.emptyList(),
+                        "FEDERATION COMMERCE",
+                        ms.radius,
+                        null,
+                        ms,
+                        () -> ms.position
+                    );
+                }
             }
         }
 
@@ -448,7 +635,8 @@ public class StarSystem {
                 float d2 = oc.lengthSquared() - proj * proj;
                 if (d2 <= pr * pr && proj < bestT) {
                     bestT = proj;
-                    best = new TargetInfo(p.name, p.getCategory(), p.getDeposits(), "UNCLAIMED", p.radius, () -> p.position);
+                    best = new TargetInfo(p.name, p.getCategory(), p.getDeposits(isCoreFederation),
+                        isCoreFederation ? "FEDERATION CORE" : "UNCLAIMED", p.radius, () -> p.position);
                 }
             }
 
@@ -461,7 +649,8 @@ public class StarSystem {
                     float d2 = oc.lengthSquared() - proj * proj;
                     if (d2 <= mr * mr && proj < bestT) {
                         bestT = proj;
-                        best = new TargetInfo(m.name, m.category, m.deposits, "UNCLAIMED", m.radius, () -> m.position);
+                        best = new TargetInfo(m.name, m.category, m.deposits,
+                            isCoreFederation ? "FEDERATION CORE" : "UNCLAIMED", m.radius, () -> m.position);
                     }
                 }
             }
