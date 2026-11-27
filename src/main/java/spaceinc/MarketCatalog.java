@@ -26,6 +26,10 @@ public final class MarketCatalog {
             this.buyPrice = buyPrice;
             this.sellPrice = sellPrice;
         }
+
+        public ShipInventory.ItemSpec toItemSpec() {
+            return new ShipInventory.ItemSpec(id, name, shortCode, kind, true, unitMassKg, unitVolumeM3);
+        }
     }
 
     public static final List<MarketListing> LISTINGS = Arrays.asList(

@@ -2,7 +2,9 @@ package spaceinc;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 public final class MineralRegistry {
@@ -99,9 +101,31 @@ public final class MineralRegistry {
         OreType.SPODUMENE, OreType.FLUORITE, OreType.DOLOMITE
     };
 
+    private static final OreType[] STONY_ORES = {
+        OreType.QUARTZ, OreType.SPODUMENE, OreType.BERYL, OreType.BAUXITE,
+        OreType.DOLOMITE, OreType.FLUORITE, OreType.MONAZITE, OreType.URANINITE,
+        OreType.GRAPHITE, OreType.BRIMSTONE
+    };
+
+    private static final OreType[] METALLIC_ORES = {
+        OreType.HEMATITE, OreType.ILMENITE, OreType.PENTLANDITE, OreType.CHROMITE,
+        OreType.WOLFRAMITE, OreType.CHALCOPYRITE, OreType.ELECTRUM,
+        OreType.SPERRYLITE, OreType.CASSITERITE
+    };
+
     private static final OreType[] GAS_ORES = {
         OreType.GAS_HARVEST, OreType.WATER_ICE, OreType.GRAPHITE
     };
+
+    private static final Map<AsteroidType, OreType[]> ASTEROID_ORE_POOLS = createAsteroidOrePools();
+
+    private static Map<AsteroidType, OreType[]> createAsteroidOrePools() {
+        Map<AsteroidType, OreType[]> map = new EnumMap<>(AsteroidType.class);
+        map.put(AsteroidType.STONY, STONY_ORES);
+        map.put(AsteroidType.METALLIC, METALLIC_ORES);
+        map.put(AsteroidType.ICY_COMET, ICY_ORES);
+        return map;
+    }
 
     private MineralRegistry() {}
 
@@ -174,8 +198,10 @@ public final class MineralRegistry {
         return generateSeeded(name.hashCode(), ROCKY_ORES, 3, isCoreFederation);
     }
 
-    public static List<OreDeposit> forAsteroid(int index, boolean isComet, boolean isCoreFederation) {
-        return generateSeeded(index * 7919L + (isComet ? 999L : 17L), isComet ? ICY_ORES : ROCKY_ORES, 3, isCoreFederation);
+    public static List<OreDeposit> forAsteroid(int index, AsteroidType type, boolean isCoreFederation) {
+        OreType[] pool = ASTEROID_ORE_POOLS.getOrDefault(type, STONY_ORES);
+        long seed = index * 7919L + (type.ordinal() + 1L) * 313L;
+        return generateSeeded(seed, pool, 3, isCoreFederation);
     }
 
     private static List<OreDeposit> generateSeeded(long seed, OreType[] pool, int count, boolean isCoreFederation) {

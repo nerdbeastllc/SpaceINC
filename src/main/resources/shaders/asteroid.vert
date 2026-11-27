@@ -5,12 +5,13 @@ layout (location = 1) in vec3 aNormal;
 // Per-instance attributes (updated once at startup; orbit animated on GPU!)
 layout (location = 3) in vec4 aInstOrbit;     // x=orbitRadius, y=startAngle, z=orbitSpeed, w=yOffset
 layout (location = 4) in vec4 aInstScaleSpin; // xyz=non-uniform scale, w=spinPhase
-layout (location = 5) in vec4 aInstColor;     // rgb=tint, w=isIcy (0=rock, 1=ice)
+layout (location = 5) in vec4 aInstColor;     // rgb=tint, w=surfaceType (0=stony, 1=icy, 2=metallic)
 
 out vec3 vWorldPos;
 out vec3 vWorldNormal;
+out vec3 vLocalPos;
 out vec3 vTint;
-out float vIsIcy;
+out float vSurfaceType;
 
 uniform mat4 uView;
 uniform mat4 uProjection;
@@ -43,8 +44,9 @@ void main() {
 
     vWorldPos = worldPos;
     vWorldNormal = worldNorm;
+    vLocalPos = aPos;
     vTint = aInstColor.rgb;
-    vIsIcy = aInstColor.w;
+    vSurfaceType = aInstColor.w;
 
     gl_Position = uProjection * uView * vec4(worldPos, 1.0);
 }

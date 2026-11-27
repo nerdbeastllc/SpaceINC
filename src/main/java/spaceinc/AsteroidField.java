@@ -18,24 +18,47 @@ import static org.lwjgl.opengl.GL31.*;
 import static org.lwjgl.opengl.GL33.*;
 
 /**
- * Single-draw-call hardware-instanced Asteroid Belt + 3D Oort Cloud.
- * All orbital & tumbling motion runs on the GPU for minimal CPU overhead.
+ * Single-draw-call hardware-instanced Asteroid Belt + Oort Cloud.
  */
 public class AsteroidField {
-    private final int vao;
-    private final int vbo;
-    private final int ebo;
-    private final int instanceVbo;
-    private final int indexCount;
+    private int vao;
+    private int vbo;
+    private int ebo;
+    private int instanceVbo;
+    private int indexCount;
     private final int instanceCount;
 
-    // Lightweight CPU-side orbital metadata for instant click picking
     private final float[] orbitR;
     private final float[] startAngle;
     private final float[] orbitSpeed;
     private final float[] yOffset;
     private final float[] pickRadius;
-    private final boolean[] isComet;
+    private final AsteroidType[] types;
+    private boolean isCoreFederation = true;
+
+    private static class RingSpec {
+        int count, offset;
+        float minR, spanR, minSpeed, spanSpeed, ySpread, minScale, spanScale, scalePow;
+        boolean comet;
+
+        private RingSpec() {}
+
+        static RingSpec belt(int count) {
+            RingSpec s = new RingSpec();
+            s.count = count; s.offset = 0; s.minR = 228f; s.spanR = 44f;
+            s.minSpeed = 0.0052f; s.spanSpeed = 0.0022f; s.ySpread = 9f;
+            s.minScale = 0.28f; s.spanScale = 0.85f; s.scalePow = 2.4f; s.comet = false;
+            return s;
+        }
+
+        static RingSpec oort(int count, int offset) {
+            RingSpec s = new RingSpec();
+            s.count = count; s.offset = offset; s.minR = 910f; s.spanR = 315f;
+            s.minSpeed = 0.00035f; s.spanSpeed = 0.00035f; s.ySpread = 18f;
+            s.minScale = 0.45f; s.spanScale = 1.15f; s.scalePow = 2.0f; s.comet = true;
+            return s;
+        }
+    }
 
     public AsteroidField(int beltCount, int oortCount) {
         this.instanceCount = beltCount + oortCount;
@@ -44,28 +67,51 @@ public class AsteroidField {
         this.orbitSpeed = new float[instanceCount];
         this.yOffset = new float[instanceCount];
         this.pickRadius = new float[instanceCount];
-        this.isComet = new boolean[instanceCount];
+        this.types = new AsteroidType[instanceCount];
 
-        // Build one craggy low-poly asteroid mesh (lat/lon displaced sphere)
+        buildAsteroidMesh();
+        FloatBuffer instBuf = MemoryUtil.memAllocFloat(instanceCount * 12);
+        Random rng = new Random(2026L);
+        populateRing(instBuf, rng, RingSpec.belt(beltCount));
+        populateRing(instBuf, rng, RingSpec.oort(oortCount, beltCount));
+        instBuf.flip();
+        uploadInstanceBuffer(instBuf);
+        MemoryUtil.memFree(instBuf);
+    }
+
+    private void buildAsteroidMesh() {
         int stacks = 6;
         int slices = 9;
-        List<Float> verts = new ArrayList<>();
-        List<Integer> inds = new ArrayList<>();
-        Random shapeRng = new Random(1337L);
+        float[][] radii = buildCraggyRadii(stacks, slices, new Random(1337L));
+        List<Float> verts = buildSphereVerts(stacks, slices, radii);
+        List<Integer> inds = buildSphereIndices(stacks, slices);
+        indexCount = inds.size();
 
-        // Precompute seam-safe vertex radii by (i, j % slices)
+        vao = glGenVertexArrays();
+        glBindVertexArray(vao);
+        uploadMeshBuffers(verts, inds);
+
+        int vStride = 6 * Float.BYTES;
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, vStride, 0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, false, vStride, 3L * Float.BYTES);
+    }
+
+    private static float[][] buildCraggyRadii(int stacks, int slices, Random rng) {
         float[][] radii = new float[stacks + 1][slices];
         for (int i = 0; i <= stacks; i++) {
-            float poleRadius = 0.85f + shapeRng.nextFloat() * 0.30f;
+            float poleRadius = 0.85f + rng.nextFloat() * 0.30f;
+            boolean isPole = (i == 0 || i == stacks);
             for (int j = 0; j < slices; j++) {
-                if (i == 0 || i == stacks) {
-                    radii[i][j] = poleRadius;
-                } else {
-                    radii[i][j] = 0.72f + shapeRng.nextFloat() * 0.52f;
-                }
+                radii[i][j] = isPole ? poleRadius : (0.72f + rng.nextFloat() * 0.52f);
             }
         }
+        return radii;
+    }
 
+    private static List<Float> buildSphereVerts(int stacks, int slices, float[][] radii) {
+        List<Float> verts = new ArrayList<>();
         for (int i = 0; i <= stacks; i++) {
             float phi = ((float) i / stacks) * (float) Math.PI;
             float sinPhi = (float) Math.sin(phi);
@@ -81,7 +127,11 @@ public class AsteroidField {
                 verts.add(x / len); verts.add(y / len); verts.add(z / len);
             }
         }
+        return verts;
+    }
 
+    private static List<Integer> buildSphereIndices(int stacks, int slices) {
+        List<Integer> inds = new ArrayList<>();
         int stride = slices + 1;
         for (int i = 0; i < stacks; i++) {
             for (int j = 0; j < slices; j++) {
@@ -89,23 +139,21 @@ public class AsteroidField {
                 int b = (i + 1) * stride + j;
                 int c = (i + 1) * stride + (j + 1);
                 int d = i * stride + (j + 1);
-                // Counter-clockwise winding
                 inds.add(a); inds.add(d); inds.add(b);
                 inds.add(b); inds.add(d); inds.add(c);
             }
         }
-        indexCount = inds.size();
+        return inds;
+    }
 
-        vao = glGenVertexArrays();
-        glBindVertexArray(vao);
-
-        FloatBuffer vb = MemoryUtil.memAllocFloat(verts.size());
-        for (float f : verts) vb.put(f);
-        vb.flip();
+    private void uploadMeshBuffers(List<Float> verts, List<Integer> inds) {
+        FloatBuffer fb = MemoryUtil.memAllocFloat(verts.size());
+        for (float f : verts) fb.put(f);
+        fb.flip();
         vbo = glGenBuffers();
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, vb, GL_STATIC_DRAW);
-        MemoryUtil.memFree(vb);
+        glBufferData(GL_ARRAY_BUFFER, fb, GL_STATIC_DRAW);
+        MemoryUtil.memFree(fb);
 
         IntBuffer ib = MemoryUtil.memAllocInt(inds.size());
         for (int idx : inds) ib.put(idx);
@@ -114,79 +162,49 @@ public class AsteroidField {
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, ib, GL_STATIC_DRAW);
         MemoryUtil.memFree(ib);
+    }
 
-        int vStride = 6 * Float.BYTES;
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, false, vStride, 0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, vStride, 3L * Float.BYTES);
-
-        // Build per-instance data: 12 floats per instance (3 vec4s)
-        FloatBuffer instBuf = MemoryUtil.memAllocFloat(instanceCount * 12);
-        Random rng = new Random(2026L);
-
-        // 1. Asteroid Belt (between Mars 198 and Jupiter 305 -> r = 228..272)
-        for (int i = 0; i < beltCount; i++) {
-            float r = 228.0f + rng.nextFloat() * 44.0f;
+    private void populateRing(FloatBuffer buf, Random rng, RingSpec spec) {
+        for (int i = 0; i < spec.count; i++) {
+            float r = spec.minR + rng.nextFloat() * spec.spanR;
+            float speed = (spec.minSpeed + rng.nextFloat() * spec.spanSpeed) / 3.0f;
+            float yOff = (rng.nextFloat() - 0.5f) * spec.ySpread;
+            float baseScale = spec.minScale + (float) Math.pow(rng.nextFloat(), spec.scalePow) * spec.spanScale;
             float angle = rng.nextFloat() * 2.0f * (float) Math.PI;
-            float speed = (0.0052f + rng.nextFloat() * 0.0022f) / 3.0f * StarSystem.ORBIT_TIME_SCALE;
-            float yOff = (rng.nextFloat() - 0.5f) * 9.0f;
-
-            float baseScale = 0.28f + (float) Math.pow(rng.nextFloat(), 2.4) * 0.85f;
-            float sx = baseScale * (0.7f + rng.nextFloat() * 0.7f);
-            float sy = baseScale * (0.6f + rng.nextFloat() * 0.6f);
-            float sz = baseScale * (0.7f + rng.nextFloat() * 0.7f);
+            float sx = baseScale * (0.72f + rng.nextFloat() * 0.65f);
+            float sy = baseScale * (0.65f + rng.nextFloat() * 0.60f);
+            float sz = baseScale * (0.72f + rng.nextFloat() * 0.65f);
             float spinPhase = rng.nextFloat() * 6.283f;
 
-            float shade = 0.36f + rng.nextFloat() * 0.32f;
-            float cr = shade * (1.05f + rng.nextFloat() * 0.15f);
-            float cg = shade * (0.95f + rng.nextFloat() * 0.08f);
-            float cb = shade * (0.85f + rng.nextFloat() * 0.08f);
+            AsteroidType type = pickType(spec.comet, rng);
+            float tone = type.baseTone + rng.nextFloat() * type.toneSpan;
+            float cr = tone * type.mulR;
+            float cg = tone * type.mulG;
+            float cb = tone * type.mulB;
 
-            instBuf.put(r).put(angle).put(speed).put(yOff);
-            instBuf.put(sx).put(sy).put(sz).put(spinPhase);
-            instBuf.put(cr).put(cg).put(cb).put(0.0f);
+            buf.put(r).put(angle).put(speed).put(yOff);
+            buf.put(sx).put(sy).put(sz).put(spinPhase);
+            buf.put(cr).put(cg).put(cb).put(type.shaderSurfaceType);
 
-            orbitR[i] = r;
-            startAngle[i] = angle;
-            orbitSpeed[i] = speed;
-            yOffset[i] = yOff;
-            pickRadius[i] = Math.max(sx, Math.max(sy, sz));
-            isComet[i] = false;
-        }
-
-        // 2. Oort Cloud (on the ecliptic plane beyond Pluto 770 -> r = 910..1225)
-        for (int i = 0; i < oortCount; i++) {
-            int idx = beltCount + i;
-            float r = 910.0f + rng.nextFloat() * 315.0f;
-            float yOff = (rng.nextFloat() - 0.5f) * 18.0f;
-            float angle = rng.nextFloat() * 2.0f * (float) Math.PI;
-            float speed = (0.00035f + rng.nextFloat() * 0.00035f) / 3.0f * StarSystem.ORBIT_TIME_SCALE;
-
-            float baseScale = 0.45f + (float) Math.pow(rng.nextFloat(), 2.0) * 1.15f;
-            float sx = baseScale * (0.75f + rng.nextFloat() * 0.6f);
-            float sy = baseScale * (0.75f + rng.nextFloat() * 0.6f);
-            float sz = baseScale * (0.75f + rng.nextFloat() * 0.6f);
-            float spinPhase = rng.nextFloat() * 6.283f;
-
-            float ice = 0.62f + rng.nextFloat() * 0.34f;
-            instBuf.put(r).put(angle).put(speed).put(yOff);
-            instBuf.put(sx).put(sy).put(sz).put(spinPhase);
-            instBuf.put(ice * 0.78f).put(ice * 0.90f).put(ice * 1.05f).put(1.0f);
-
+            int idx = spec.offset + i;
             orbitR[idx] = r;
             startAngle[idx] = angle;
             orbitSpeed[idx] = speed;
             yOffset[idx] = yOff;
             pickRadius[idx] = Math.max(sx, Math.max(sy, sz));
-            isComet[idx] = true;
+            types[idx] = type;
         }
-        instBuf.flip();
+    }
 
+    private static AsteroidType pickType(boolean cometRing, Random rng) {
+        if (cometRing) return AsteroidType.ICY_COMET;
+        return (rng.nextFloat() < 0.32f) ? AsteroidType.METALLIC : AsteroidType.STONY;
+    }
+
+    private void uploadInstanceBuffer(FloatBuffer instBuf) {
         instanceVbo = glGenBuffers();
         glBindBuffer(GL_ARRAY_BUFFER, instanceVbo);
         glBufferData(GL_ARRAY_BUFFER, instBuf, GL_STATIC_DRAW);
-        MemoryUtil.memFree(instBuf);
 
         int iStride = 12 * Float.BYTES;
         glEnableVertexAttribArray(3);
@@ -204,20 +222,21 @@ public class AsteroidField {
         glBindVertexArray(0);
     }
 
-    public void draw(Shader shader, Matrix4f view, Matrix4f proj, float time, StarSystem sys) {
+    public void draw(Shader shader, GameState state) {
         shader.use();
-        shader.setMat4("uView", view);
-        shader.setMat4("uProjection", proj);
-        shader.setFloat("uTime", time);
-        shader.setVec3("uStarPos", sys.starPos);
-        shader.setVec3("uStarLightColor", sys.starType.lightColor);
+        shader.setMat4("uView", state.camera.getView());
+        shader.setMat4("uProjection", state.camera.getProjection());
+        shader.setFloat("uTime", state.currentElapsed);
+        shader.setVec3("uStarPos", state.starSystem.starPos);
+        shader.setVec3("uStarLightColor", state.starSystem.starType.lightColor);
+        shader.setVec3("uCameraPos", state.camera.getEyePos());
 
         glBindVertexArray(vao);
         glDrawElementsInstanced(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0L, instanceCount);
         glBindVertexArray(0);
     }
 
-    public int pick(Vector3f rayOrigin, Vector3f rayDir, float elapsed, float camDistScale) {
+    public int pick(Vector3f rayOrigin, Vector3f rayDir, float elapsed) {
         int bestIdx = -1;
         float bestT = Float.MAX_VALUE;
         Vector3f pos = new Vector3f();
@@ -228,7 +247,7 @@ public class AsteroidField {
             pos.set((float) Math.cos(a) * orbitR[i], yOffset[i], (float) Math.sin(a) * orbitR[i]);
 
             float distToCam = pos.distance(rayOrigin);
-            float r = Math.max(pickRadius[i] * 1.8f, distToCam * 0.012f * camDistScale);
+            float r = Math.max(pickRadius[i] * 1.8f, distToCam * 0.012f);
 
             oc.set(pos).sub(rayOrigin);
             float proj = oc.dot(rayDir);
@@ -242,17 +261,14 @@ public class AsteroidField {
         return bestIdx;
     }
 
-    private boolean isCoreFederation = true;
-
     public void setCoreFederation(boolean isCoreFederation) {
         this.isCoreFederation = isCoreFederation;
     }
 
     public TargetInfo getTargetInfo(int idx, java.util.function.Supplier<Float> timeSupplier) {
-        boolean comet = isComet[idx];
-        String name = comet ? String.format("OORT COMET #%04d", idx + 1) : String.format("BELT ASTEROID #%04d", idx + 1);
-        String cat = comet ? "ICY PLANETESIMAL" : "SILICATE / METALLIC ASTEROID";
-        return new TargetInfo(name, cat, MineralRegistry.forAsteroid(idx, comet, isCoreFederation), "UNCLAIMED", pickRadius[idx], () -> {
+        AsteroidType type = types[idx];
+        String name = String.format("%s #%04d", type.namePrefix, idx + 1);
+        return new TargetInfo(name, type.category, MineralRegistry.forAsteroid(idx, type, isCoreFederation), "UNCLAIMED", pickRadius[idx], () -> {
             float a = startAngle[idx] + timeSupplier.get() * orbitSpeed[idx];
             return new Vector3f((float) Math.cos(a) * orbitR[idx], yOffset[idx], (float) Math.sin(a) * orbitR[idx]);
         });

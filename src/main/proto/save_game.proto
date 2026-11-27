@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package spaceinc;
+
+option java_package = "spaceinc.proto";
+option java_outer_classname = "SaveGameProto";
+option java_multiple_files = true;
+
+// BACKWARD COMPATIBILITY CONTRACT:
+// - Never change or reuse field numbers of existing fields.
+// - Fields added in future versions default safely when reading older saves.
+message SaveGame {
+  int32 schema_version = 1;
+  string current_system_id = 2;
+  int32 credits = 3;
+  ShipState ship = 4;
+  map<string, InventoryState> station_hangars = 5;
+}
+
+message ShipState {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  float yaw = 4;
+  InventoryState inventory = 5;
+}
+
+message InventoryState {
+  repeated CargoItemState items = 1;
+}
+
+message CargoItemState {
+  string id = 1;
+  string name = 2;
+  string short_code = 3;
+  string kind = 4;
+  int32 count = 5;
+  bool stackable = 6;
+  double unit_mass_kg = 7;
+  double unit_volume_m3 = 8;
+  int32 grid_col = 9;
+  int32 grid_row = 10;
+}

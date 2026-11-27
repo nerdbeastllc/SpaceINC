@@ -4,6 +4,7 @@ import org.lwjgl.system.MemoryUtil;
 
 import java.nio.FloatBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.lwjgl.opengl.GL11.*;
@@ -12,7 +13,7 @@ import static org.lwjgl.opengl.GL20.*;
 import static org.lwjgl.opengl.GL30.*;
 
 /**
- * Lightweight crisp 2D tactical HUD with built-in 5x7 bitmap font.
+ * Modular 2D tactical HUD with built-in 5x7 bitmap font.
  */
 public class HudOverlay {
     private static final int MAX_VERTS = 262144;
@@ -24,7 +25,6 @@ public class HudOverlay {
 
     private static final Map<Character, int[]> FONT = new HashMap<>();
     static {
-        // 5x7 bitmap font (5 bits per row, 7 rows)
         FONT.put('A', new int[]{0x0E,0x11,0x11,0x1F,0x11,0x11,0x11});
         FONT.put('B', new int[]{0x1E,0x11,0x11,0x1E,0x11,0x11,0x1E});
         FONT.put('C', new int[]{0x0E,0x11,0x10,0x10,0x10,0x11,0x0E});
@@ -76,8 +76,36 @@ public class HudOverlay {
         FONT.put('+', new int[]{0x00,0x04,0x04,0x1F,0x04,0x04,0x00});
         FONT.put('>', new int[]{0x10,0x08,0x04,0x02,0x04,0x08,0x10});
         FONT.put('@', new int[]{0x0E,0x11,0x17,0x15,0x17,0x10,0x0E});
+        FONT.put('_', new int[]{0x00,0x00,0x00,0x00,0x00,0x00,0x1F});
         FONT.put(' ', new int[]{0x00,0x00,0x00,0x00,0x00,0x00,0x00});
     }
+
+    private static class Rgba {
+        final float r, g, b, a;
+        Rgba(float r, float g, float b, float a) { this.r = r; this.g = g; this.b = b; this.a = a; }
+    }
+
+    private static class Pos {
+        final float x, y;
+        Pos(float x, float y) { this.x = x; this.y = y; }
+    }
+
+    private static class WindowSpec {
+        final float x, y;
+        final String title;
+        final Rgba accent;
+        final String transferLabel;
+        WindowSpec(float x, float y, String title, Rgba accent, String transferLabel) {
+            this.x = x; this.y = y; this.title = title; this.accent = accent; this.transferLabel = transferLabel;
+        }
+    }
+
+    private static final Rgba CYAN = new Rgba(0.38f, 0.90f, 1.00f, 1.0f);
+    private static final Rgba GOLD = new Rgba(1.00f, 0.84f, 0.42f, 1.0f);
+    private static final Rgba GREEN = new Rgba(0.45f, 0.94f, 0.68f, 1.0f);
+    private static final Rgba WHITE = new Rgba(0.95f, 0.98f, 1.00f, 1.0f);
+    private static final Rgba MUTED = new Rgba(0.65f, 0.72f, 0.82f, 0.9f);
+    private static final Rgba BG_DARK = new Rgba(0.03f, 0.05f, 0.09f, 0.88f);
 
     public HudOverlay() {
         shader = new Shader("shaders/hud.vert", "shaders/hud.frag");
@@ -95,446 +123,23 @@ public class HudOverlay {
         glBindVertexArray(0);
     }
 
-    public void render(int width, int height, StarSystem sys, Ship ship, String targetName,
-                       TargetInfo selected, GalaxyMap galaxyMap, boolean galaxyMapOpen,
-                       boolean pauseMenuOpen, String menuSubMode, String saveNameInput,
-                       java.util.List<String> availableSaves,
-                       boolean inventoryOpen, float invX, float invY,
-                       ShipInventory.CargoItem draggingItem, float dragMouseX, float dragMouseY,
-                       ShipInventory.CargoItem splitTarget, int splitAmount,
-                       boolean shipMenuOpen, float shipMenuX, float shipMenuY,
-                       StarSystem.MarketStation activeStation, ShipInventory stationHangar,
-                       boolean stationHangarOpen, float stationInvX, float stationInvY,
-                       String marketMode, String statusMsg,
-                       int credits, String currentSystemId,
-                       float mapPanX, float mapPanY, float mapZoom, int fps) {
+    public void render(GameState s, int fps) {
         vertCount = 0;
         buffer.clear();
 
-        // Top-left panel
-        drawRect(18, 18, 560, 108, 0.03f, 0.05f, 0.09f, 0.76f);
-        String zone = sys.isCoreFederation ? "FEDERATION CORE (LOW PURITY)" : "FRONTIER (HIGH PURITY)";
-        drawText(30, 28, 1.8f, "SYSTEM: " + sys.systemName + " // " + zone,
-            sys.isCoreFederation ? 0.45f : 1.00f, sys.isCoreFederation ? 0.85f : 0.58f, sys.isCoreFederation ? 1.0f : 0.28f, 1.0f);
-        int starNum = sys.starType.ordinal() + 1;
-        int starTotal = StarSystem.StarType.values().length;
-        drawText(30, 50, 1.5f, "STAR [" + starNum + "/" + starTotal + "]: " + sys.starType.displayName, 1.0f, 0.84f, 0.45f, 1.0f);
-        drawText(30, 70, 1.45f, String.format("CREDITS: %,d CR   [I] INVENTORY   [M] GALAXY MAP", credits).replace(",", ""), 0.45f, 0.94f, 0.68f, 1.0f);
-        drawText(30, 90, 1.35f, "[ / ] CYCLE STAR   [J] JUMP GATE   [ESC] MENU", 0.65f, 0.72f, 0.82f, 0.9f);
-        if (statusMsg != null && !statusMsg.isEmpty()) {
-            drawRect(18, 132, 560, 28, 0.16f, 0.09f, 0.04f, 0.92f);
-            drawText(30, 140, 1.35f, statusMsg, 1.00f, 0.82f, 0.35f, 1.0f);
-        }
+        drawTopLeftPanel(s);
+        drawTargetCard(s);
+        drawInventoryOverlays(s);
+        drawMarketModal(s);
+        drawSplitDialog(s);
+        drawGalaxyMap(s);
+        drawPauseMenu(s);
+        drawBottomHud(s, fps);
 
-        // Top-right Selected Object Info Card
-        if (selected != null) {
-            int depCount = selected.deposits.size();
-            float cardW = 590;
-            float cardH = (selected.jumpTargetSystemId != null) ? 116
-                : (selected.marketStation != null ? 148 : (128 + depCount * 20));
-            float cx = width - cardW - 18;
-            float cy = 18;
-            drawRect(cx, cy, cardW, cardH, 0.03f, 0.05f, 0.09f, 0.88f);
-            drawRect(cx, cy, cardW, 2, 0.30f, 0.82f, 1.00f, 0.90f);
-            drawText(cx + 14, cy + 12, 1.8f, "TARGET: " + selected.name, 0.38f, 0.90f, 1.00f, 1.0f);
-            drawText(cx + 14, cy + 36, 1.5f, "CLASS:  " + selected.category, 0.72f, 0.82f, 0.92f, 0.95f);
+        flushToScreen(s.winWidth, s.winHeight);
+    }
 
-            float dist = selected.getPosition().distance(ship.position);
-            drawText(cx + 14, cy + 56, 1.5f, String.format("DIST:   %.1f KM", dist), 1.00f, 0.84f, 0.42f, 1.0f);
-
-            if (selected.jumpTargetSystemId != null) {
-                drawText(cx + 14, cy + 82, 1.5f, "ACTION: PRESS [J] TO INITIATE STARGATE JUMP", 0.35f, 0.95f, 0.65f, 1.0f);
-            } else if (selected.marketStation != null) {
-                boolean inRange = dist <= 22.0f;
-                drawText(cx + 14, cy + 78, 1.35f,
-                    inRange ? "DOCKING PROXIMITY: IN RANGE (TRANSFER READY)" : "PROXIMITY: APPROACH <= 22.0 KM TO TRANSFER",
-                    inRange ? 0.42f : 1.00f, inRange ? 0.95f : 0.65f, inRange ? 0.62f : 0.25f, 1.0f);
-
-                float btnY = cy + 104;
-                String[] actions = { "BUY", "SELL", "INVENTORY" };
-                for (int i = 0; i < actions.length; i++) {
-                    float bx = cx + 14 + i * 136;
-                    drawRect(bx, btnY, 124, 30, 0.09f, 0.20f, 0.28f, 0.95f);
-                    drawRect(bx, btnY, 124, 1.5f, 0.35f, 0.85f, 1.00f, 0.95f);
-                    drawText(bx + 18, btnY + 9, 1.45f, actions[i], 0.95f, 0.98f, 1.0f, 1.0f);
-                }
-            } else {
-                drawText(cx + 14, cy + 78, 1.4f, "MINABLE ORES (SHARE @ PURITY) -> REFINED ELEMENTS:", 0.56f, 0.92f, 0.72f, 0.95f);
-                float rowY = cy + 98;
-                for (MineralRegistry.OreDeposit dep : selected.deposits) {
-                    String line = String.format("- %s (%d%% @ %d%%) -> %s",
-                        dep.ore.displayName, dep.percent, dep.purityPercent, dep.ore.elementListText);
-                    drawText(cx + 18, rowY, 1.4f, line, 0.85f, 0.94f, 0.90f, 0.95f);
-                    rowY += 20;
-                }
-                drawText(cx + 14, rowY + 6, 1.4f, "OWNER:  " + selected.faction + "  [NAVIGATE / SURFACE SOON]", 0.55f, 0.65f, 0.76f, 0.85f);
-            }
-        }
-
-        // Centered Galaxy Map Overlay [M]
-        if (galaxyMapOpen) {
-            float mw = GalaxyMap.panelWidth(width);
-            float mh = GalaxyMap.panelHeight(height);
-            float mx = (width - mw) * 0.5f;
-            float my = (height - mh) * 0.5f;
-            drawRect(mx, my, mw, mh, 0.02f, 0.04f, 0.08f, 0.94f);
-            drawRect(mx, my, mw, 2, 0.40f, 0.86f, 1.00f, 0.95f);
-            drawText(mx + 20, my + 16, 1.9f, "MILKY WAY SECTOR MAP // 16 SYSTEMS (12 STAR CLASSES)", 0.45f, 0.88f, 1.0f, 1.0f);
-            drawText(mx + 20, my + 42, 1.3f, "CLICK ANY STAR TO JUMP   R-DRAG: PAN   SCROLL: ZOOM   [M] CLOSE", 0.70f, 0.78f, 0.88f, 0.9f);
-
-            float mapCx = mx + mw * 0.5f + mapPanX;
-            float mapCy = my + mh * 0.54f + mapPanY;
-            float scaleX = mw * 0.36f * mapZoom;
-            float scaleY = mh * 0.30f * mapZoom;
-
-            // Draw system labels & current-system marker clipped inside map panel
-            for (int i = 0; i < galaxyMap.systems.size(); i++) {
-                GalaxyMap.SystemNode node = galaxyMap.systems.get(i);
-                float nx = mapCx + node.mapX * scaleX;
-                float ny = mapCy + node.mapY * scaleY;
-                if (nx < mx + 12 || nx > mx + mw - 12 || ny < my + 62 || ny > my + mh - 18) continue;
-
-                boolean isCurrent = node.id.equals(currentSystemId);
-                float boxHalf = 22f * Math.max(0.75f, Math.min(1.6f, mapZoom));
-                if (isCurrent) {
-                    drawRect(nx - boxHalf, ny - boxHalf, boxHalf * 2f, 2, 0.25f, 0.95f, 0.72f, 0.85f);
-                    drawRect(nx - boxHalf, ny + boxHalf - 2, boxHalf * 2f, 2, 0.25f, 0.95f, 0.72f, 0.85f);
-                }
-                float r = node.isCoreFederation ? 0.35f : 1.00f;
-                float g = node.isCoreFederation ? 0.82f : 0.52f;
-                float b = node.isCoreFederation ? 1.00f : 0.22f;
-
-                String label = "[" + (i + 1) + "] " + node.name;
-                drawText(nx - 58, ny + boxHalf + 6, 1.35f, label, 0.92f, 0.96f, 1.0f, 1.0f);
-                String tier = node.isCoreFederation ? "CORE (LOW PURITY)" : "FRONTIER (HIGH PURITY)";
-                drawText(nx - 58, ny + boxHalf + 22, 1.15f, tier, r, g, b, 0.9f);
-            }
-        }
-
-        // Draggable Ship Inventory Window [I] (Invisible Grid + Mass & Volume + Draggable Items)
-        if (inventoryOpen) {
-            float iw = 456;
-            float ih = 356;
-            drawRect(invX, invY, iw, ih, 0.03f, 0.05f, 0.09f, 0.92f);
-            drawRect(invX, invY, iw, 28, 0.08f, 0.14f, 0.22f, 0.96f);
-            drawRect(invX, invY, iw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-            drawText(invX + 12, invY + 8, 1.6f, "CORVETTE CARGO HOLD", 0.45f, 0.90f, 1.0f, 1.0f);
-
-            // Close [X] button in top-right corner
-            float closeX = invX + iw - 26;
-            float closeY = invY + 4;
-            drawRect(closeX, closeY, 20, 20, 0.32f, 0.08f, 0.10f, 0.92f);
-            drawText(closeX + 6, closeY + 4, 1.5f, "X", 1.0f, 0.85f, 0.85f, 1.0f);
-
-            // Dual Capacity Bars: Mass (KG) & Volume (M3)
-            double usedMass = ship.inventory.getUsedMassKg();
-            double maxMass = ship.inventory.maxMassKg;
-            float massRatio = (float) Math.max(0.0, Math.min(1.0, usedMass / maxMass));
-
-            double usedVol = ship.inventory.getUsedVolumeM3();
-            double maxVol = ship.inventory.maxVolumeM3;
-            float volRatio = (float) Math.max(0.0, Math.min(1.0, usedVol / maxVol));
-
-            float halfBarW = (iw - 40) * 0.5f;
-            drawText(invX + 14, invY + 38, 1.25f, String.format("MASS: %.1f / %.0f KG", usedMass, maxMass), 0.95f, 0.82f, 0.45f, 0.95f);
-            drawRect(invX + 14, invY + 53, halfBarW, 7, 0.08f, 0.11f, 0.16f, 0.95f);
-            drawRect(invX + 14, invY + 53, halfBarW * massRatio, 7, 0.95f, 0.68f, 0.24f, 0.95f);
-
-            float volX = invX + 26 + halfBarW;
-            drawText(volX, invY + 38, 1.25f, String.format("VOL:  %.1f / %.0f M3", usedVol, maxVol), 0.45f, 0.88f, 1.0f, 0.95f);
-            drawRect(volX, invY + 53, halfBarW, 7, 0.08f, 0.11f, 0.16f, 0.95f);
-            drawRect(volX, invY + 53, halfBarW * volRatio, 7, 0.30f, 0.82f, 1.00f, 0.95f);
-
-            // Invisible grid area (6 cols x 3 visible rows out of 12, 64x64 each, 8px gap)
-            float gridX = invX + 16;
-            float gridY = invY + 72;
-            float cell = 64f;
-            float gap = 8f;
-
-            // Draw non-dragged items within the visible scroll window
-            for (ShipInventory.CargoItem item : ship.inventory.items) {
-                if (item == draggingItem) continue;
-                int visRow = item.gridRow - ship.inventory.scrollRow;
-                if (visRow < 0 || visRow >= ShipInventory.VISIBLE_ROWS) continue;
-                float ix = gridX + item.gridCol * (cell + gap);
-                float iy = gridY + visRow * (cell + gap);
-                boolean isSel = (item == ship.inventory.selectedItem);
-                drawCargoTile(ix, iy, cell, item, isSel);
-            }
-
-            // Vertical Scrollbar
-            drawVerticalScrollbar(invX + iw - 16, gridY, 8, 208, ship.inventory.scrollRow,
-                ShipInventory.ROWS, ShipInventory.VISIBLE_ROWS, 0.30f, 0.82f, 1.00f);
-
-            // Selected Item Details Footer
-            float footY = invY + ih - 54;
-            drawRect(invX + 12, footY, iw - 24, 42, 0.05f, 0.08f, 0.13f, 0.90f);
-            if (ship.inventory.selectedItem != null) {
-                ShipInventory.CargoItem sel = ship.inventory.selectedItem;
-                drawText(invX + 20, footY + 7, 1.35f, sel.name + "  X" + sel.count + "  [" + sel.kind + "]", 0.92f, 0.97f, 1.0f, 1.0f);
-                drawText(invX + 20, footY + 24, 1.25f,
-                    String.format("MASS: %.1f KG   VOL: %.1f M3", sel.getTotalMassKg(), sel.getTotalVolumeM3()),
-                    0.65f, 0.86f, 0.95f, 0.95f);
-                if (activeStation != null && stationHangarOpen) {
-                    drawRect(invX + iw - 146, footY + 6, 126, 30, 0.10f, 0.24f, 0.34f, 0.95f);
-                    drawText(invX + iw - 138, footY + 15, 1.25f, "-> TO STATION", 0.95f, 0.98f, 1.0f, 1.0f);
-                }
-            } else {
-                drawText(invX + 20, footY + 14, 1.25f, "DRAG: MOVE   SHIFT+DRAG: HALF   CTRL+CLICK: SPLIT", 0.55f, 0.65f, 0.76f, 0.85f);
-            }
-        }
-
-        // Station Hangar Window (1000x Ship Capacity: 500,000 KG / 250,000 M3)
-        if (stationHangarOpen && activeStation != null && stationHangar != null) {
-            float sx = stationInvX;
-            float sy = stationInvY;
-            float sw = 456f;
-            float sh = 356f;
-            drawRect(sx, sy, sw, sh, 0.03f, 0.05f, 0.09f, 0.92f);
-            drawRect(sx, sy, sw, 28, 0.12f, 0.14f, 0.22f, 0.96f);
-            drawRect(sx, sy, sw, 2, 1.00f, 0.78f, 0.28f, 0.95f);
-            drawText(sx + 12, sy + 8, 1.55f, activeStation.name + " HANGAR", 1.00f, 0.84f, 0.42f, 1.0f);
-
-            float closeX = sx + sw - 26;
-            float closeY = sy + 4;
-            drawRect(closeX, closeY, 20, 20, 0.32f, 0.08f, 0.10f, 0.92f);
-            drawText(closeX + 6, closeY + 4, 1.5f, "X", 1.0f, 0.85f, 0.85f, 1.0f);
-
-            double usedMass = stationHangar.getUsedMassKg();
-            double maxMass = stationHangar.maxMassKg;
-            double usedVol = stationHangar.getUsedVolumeM3();
-            double maxVol = stationHangar.maxVolumeM3;
-            float halfBarW = (sw - 40) * 0.5f;
-            drawText(sx + 14, sy + 38, 1.2f, String.format("MASS: %.0f / %.0f KG", usedMass, maxMass), 0.95f, 0.82f, 0.45f, 0.95f);
-            drawRect(sx + 14, sy + 53, halfBarW, 7, 0.08f, 0.11f, 0.16f, 0.95f);
-            drawRect(sx + 14, sy + 53, halfBarW * (float) Math.min(1.0, usedMass / maxMass), 7, 0.95f, 0.68f, 0.24f, 0.95f);
-
-            float volX = sx + 26 + halfBarW;
-            drawText(volX, sy + 38, 1.2f, String.format("VOL: %.0f / %.0f M3", usedVol, maxVol), 0.45f, 0.88f, 1.0f, 0.95f);
-            drawRect(volX, sy + 53, halfBarW, 7, 0.08f, 0.11f, 0.16f, 0.95f);
-            drawRect(volX, sy + 53, halfBarW * (float) Math.min(1.0, usedVol / maxVol), 7, 0.30f, 0.82f, 1.00f, 0.95f);
-
-            float gridX = sx + 16;
-            float gridY = sy + 72;
-            float cell = 64f, gap = 8f;
-            for (ShipInventory.CargoItem item : stationHangar.items) {
-                if (item == draggingItem) continue;
-                int visRow = item.gridRow - stationHangar.scrollRow;
-                if (visRow < 0 || visRow >= ShipInventory.VISIBLE_ROWS) continue;
-                float ix = gridX + item.gridCol * (cell + gap);
-                float iy = gridY + visRow * (cell + gap);
-                drawCargoTile(ix, iy, cell, item, item == stationHangar.selectedItem);
-            }
-
-            // Vertical Scrollbar
-            drawVerticalScrollbar(sx + sw - 16, gridY, 8, 208, stationHangar.scrollRow,
-                ShipInventory.ROWS, ShipInventory.VISIBLE_ROWS, 1.00f, 0.78f, 0.28f);
-
-            float footY = sy + sh - 54;
-            drawRect(sx + 12, footY, sw - 24, 42, 0.05f, 0.08f, 0.13f, 0.90f);
-            if (stationHangar.selectedItem != null) {
-                ShipInventory.CargoItem sel = stationHangar.selectedItem;
-                drawText(sx + 20, footY + 7, 1.35f, sel.name + "  X" + sel.count, 0.92f, 0.97f, 1.0f, 1.0f);
-                drawText(sx + 20, footY + 24, 1.25f, String.format("MASS: %.1f KG   VOL: %.1f M3", sel.getTotalMassKg(), sel.getTotalVolumeM3()), 0.65f, 0.86f, 0.95f, 0.95f);
-                drawRect(sx + sw - 136, footY + 6, 116, 30, 0.10f, 0.24f, 0.34f, 0.95f);
-                drawText(sx + sw - 126, footY + 15, 1.25f, "<- TO SHIP", 0.95f, 0.98f, 1.0f, 1.0f);
-            } else {
-                drawText(sx + 20, footY + 14, 1.25f, "DRAG ITEMS TO/FROM SHIP CARGO (<= 22 KM)", 0.55f, 0.65f, 0.76f, 0.85f);
-            }
-        }
-
-        // Draw dragged item on top of BOTH inventory windows
-        if (draggingItem != null) {
-            drawCargoTile(dragMouseX - 32f, dragMouseY - 32f, 64f, draggingItem, true);
-        }
-
-        // Market Buy / Sell Panel
-        if (marketMode != null && activeStation != null) {
-            float mw = 540f;
-            float mh = 340f;
-            float mx = (width - mw) * 0.5f;
-            float my = (height - mh) * 0.5f;
-            drawRect(mx, my, mw, mh, 0.03f, 0.05f, 0.09f, 0.95f);
-            drawRect(mx, my, mw, 28, 0.10f, 0.16f, 0.24f, 0.96f);
-            drawRect(mx, my, mw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-            drawText(mx + 14, my + 8, 1.55f, activeStation.name + " // " + marketMode + " TERMINAL", 0.45f, 0.90f, 1.0f, 1.0f);
-
-            float closeX = mx + mw - 26;
-            float closeY = my + 4;
-            drawRect(closeX, closeY, 20, 20, 0.32f, 0.08f, 0.10f, 0.92f);
-            drawText(closeX + 6, closeY + 4, 1.5f, "X", 1.0f, 0.85f, 0.85f, 1.0f);
-
-            float rowY = my + 44;
-            if ("BUY".equals(marketMode)) {
-                for (MarketCatalog.MarketListing m : MarketCatalog.LISTINGS) {
-                    drawText(mx + 16, rowY + 8, 1.35f, m.name, 0.90f, 0.95f, 1.0f, 0.95f);
-                    drawText(mx + 250, rowY + 8, 1.35f, m.buyPrice + " CR", 1.00f, 0.84f, 0.42f, 1.0f);
-                    drawRect(mx + 340, rowY, 82, 26, 0.10f, 0.25f, 0.34f, 0.95f);
-                    drawText(mx + 354, rowY + 7, 1.3f, "BUY 1", 0.95f, 0.98f, 1.0f, 1.0f);
-                    drawRect(mx + 434, rowY, 82, 26, 0.10f, 0.25f, 0.34f, 0.95f);
-                    drawText(mx + 448, rowY + 7, 1.3f, "BUY 5", 0.95f, 0.98f, 1.0f, 1.0f);
-                    rowY += 38;
-                }
-            } else if ("SELL".equals(marketMode) && stationHangar != null) {
-                if (stationHangar.items.isEmpty()) {
-                    drawText(mx + 20, rowY + 16, 1.4f, "STATION HANGAR IS EMPTY. TRANSFER ITEMS TO SELL.", 0.72f, 0.78f, 0.86f, 0.9f);
-                } else {
-                    for (int i = 0; i < Math.min(7, stationHangar.items.size()); i++) {
-                        ShipInventory.CargoItem item = stationHangar.items.get(i);
-                        MarketCatalog.MarketListing ml = MarketCatalog.findById(item.id);
-                        int price = (ml != null) ? ml.sellPrice : 20;
-                        drawText(mx + 16, rowY + 8, 1.35f, item.name + " X" + item.count, 0.90f, 0.95f, 1.0f, 0.95f);
-                        drawText(mx + 250, rowY + 8, 1.35f, price + " CR", 0.56f, 0.92f, 0.72f, 1.0f);
-                        drawRect(mx + 340, rowY, 82, 26, 0.26f, 0.18f, 0.10f, 0.95f);
-                        drawText(mx + 350, rowY + 7, 1.3f, "SELL 1", 0.95f, 0.98f, 1.0f, 1.0f);
-                        drawRect(mx + 434, rowY, 88, 26, 0.26f, 0.18f, 0.10f, 0.95f);
-                        drawText(mx + 440, rowY + 7, 1.3f, "SELL ALL", 0.95f, 0.98f, 1.0f, 1.0f);
-                        rowY += 38;
-                    }
-                }
-            }
-        }
-
-        // Split Stack Slider Dialog (Ctrl/Cmd + Left-Click)
-        if (splitTarget != null) {
-            float dw = 340;
-            float dh = 160;
-            float dx = (width - dw) * 0.5f;
-            float dy = (height - dh) * 0.5f;
-
-            drawRect(dx, dy, dw, dh, 0.03f, 0.05f, 0.09f, 0.96f);
-            drawRect(dx, dy, dw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-            drawText(dx + 14, dy + 12, 1.5f, "SPLIT STACK: " + splitTarget.name, 0.45f, 0.90f, 1.0f, 1.0f);
-
-            int leave = splitTarget.count - splitAmount;
-            drawText(dx + 14, dy + 38, 1.35f, String.format("TAKE: %d    LEAVE: %d", splitAmount, leave), 0.95f, 0.90f, 0.55f, 1.0f);
-
-            // Slider track
-            float trackX = dx + 20;
-            float trackY = dy + 68;
-            float trackW = dw - 40;
-            float frac = (splitTarget.count > 2) ? (float) (splitAmount - 1) / (splitTarget.count - 2) : 0.5f;
-            drawRect(trackX, trackY, trackW, 8, 0.10f, 0.14f, 0.20f, 0.95f);
-            drawRect(trackX, trackY, trackW * frac, 8, 0.35f, 0.85f, 1.00f, 0.95f);
-            float knobX = trackX + trackW * frac - 6;
-            drawRect(knobX, trackY - 5, 12, 18, 0.90f, 0.96f, 1.00f, 1.0f);
-
-            // SPLIT & CANCEL buttons
-            float btnW = 136;
-            float btnH = 32;
-            float btnY = dy + dh - 46;
-            drawRect(dx + 20, btnY, btnW, btnH, 0.10f, 0.26f, 0.34f, 0.95f);
-            drawRect(dx + 20, btnY, btnW, 1.5f, 0.35f, 0.88f, 1.00f, 0.95f);
-            drawText(dx + 58, btnY + 10, 1.45f, "SPLIT", 0.95f, 0.98f, 1.0f, 1.0f);
-
-            drawRect(dx + dw - 20 - btnW, btnY, btnW, btnH, 0.16f, 0.10f, 0.12f, 0.95f);
-            drawText(dx + dw - 20 - btnW + 34, btnY + 10, 1.45f, "CANCEL", 0.85f, 0.82f, 0.85f, 0.95f);
-        }
-
-        // Ship Right-Click Context Menu
-        if (shipMenuOpen) {
-            float mw = 156;
-            float mh = 36;
-            drawRect(shipMenuX, shipMenuY, mw, mh, 0.04f, 0.07f, 0.12f, 0.95f);
-            drawRect(shipMenuX, shipMenuY, mw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-            drawText(shipMenuX + 16, shipMenuY + 11, 1.55f, "INVENTORY", 0.92f, 0.97f, 1.0f, 1.0f);
-        }
-
-        // Centered Pause Menu [ESC] + Save / Load Sub-Dialogs
-        if (pauseMenuOpen) {
-            drawRect(0, 0, width, height, 0.0f, 0.01f, 0.02f, 0.55f);
-
-            if ("SAVE".equals(menuSubMode)) {
-                float dw = 380, dh = 180;
-                float dx = (width - dw) * 0.5f;
-                float dy = (height - dh) * 0.5f;
-                drawRect(dx, dy, dw, dh, 0.03f, 0.05f, 0.09f, 0.96f);
-                drawRect(dx, dy, dw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-                drawText(dx + 18, dy + 16, 1.75f, "SAVE GAME (JSON)", 0.45f, 0.90f, 1.0f, 1.0f);
-                drawText(dx + 18, dy + 44, 1.3f, "ENTER SAVE FILE NAME:", 0.72f, 0.82f, 0.92f, 0.95f);
-
-                drawRect(dx + 18, dy + 64, dw - 36, 34, 0.06f, 0.09f, 0.14f, 0.95f);
-                drawRect(dx + 18, dy + 64, dw - 36, 1.5f, 0.35f, 0.85f, 1.00f, 0.85f);
-                drawText(dx + 28, dy + 74, 1.55f, saveNameInput + "_", 0.95f, 0.98f, 1.0f, 1.0f);
-
-                float btnW = 156, btnH = 34, btnY = dy + dh - 48;
-                drawRect(dx + 18, btnY, btnW, btnH, 0.10f, 0.28f, 0.34f, 0.95f);
-                drawRect(dx + 18, btnY, btnW, 1.5f, 0.35f, 0.88f, 1.00f, 0.95f);
-                drawText(dx + 64, btnY + 10, 1.5f, "SAVE", 0.95f, 0.98f, 1.0f, 1.0f);
-
-                drawRect(dx + dw - 18 - btnW, btnY, btnW, btnH, 0.16f, 0.10f, 0.12f, 0.95f);
-                drawText(dx + dw - 18 - btnW + 46, btnY + 10, 1.5f, "CANCEL", 0.85f, 0.82f, 0.85f, 0.95f);
-            } else if ("LOAD".equals(menuSubMode)) {
-                float dw = 400, dh = 340;
-                float dx = (width - dw) * 0.5f;
-                float dy = (height - dh) * 0.5f;
-                drawRect(dx, dy, dw, dh, 0.03f, 0.05f, 0.09f, 0.96f);
-                drawRect(dx, dy, dw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-                drawText(dx + 18, dy + 16, 1.75f, "LOAD GAME", 0.45f, 0.90f, 1.0f, 1.0f);
-
-                if (availableSaves.isEmpty()) {
-                    drawText(dx + 22, dy + 70, 1.4f, "NO SAVE FILES FOUND IN SAVES/", 0.70f, 0.76f, 0.85f, 0.9f);
-                } else {
-                    float ry = dy + 56;
-                    for (int i = 0; i < Math.min(6, availableSaves.size()); i++) {
-                        drawRect(dx + 18, ry, dw - 36, 32, 0.08f, 0.14f, 0.22f, 0.95f);
-                        drawRect(dx + 18, ry, dw - 36, 1.5f, 0.35f, 0.82f, 1.00f, 0.80f);
-                        drawText(dx + 28, ry + 9, 1.45f, availableSaves.get(i) + ".JSON", 0.92f, 0.97f, 1.0f, 1.0f);
-                        ry += 38;
-                    }
-                }
-
-                drawRect(dx + 18, dy + dh - 48, dw - 36, 34, 0.16f, 0.10f, 0.12f, 0.95f);
-                drawText(dx + 162, dy + dh - 38, 1.5f, "BACK", 0.85f, 0.82f, 0.85f, 0.95f);
-            } else {
-                float pw = 320;
-                float ph = 340;
-                float px = (width - pw) * 0.5f;
-                float py = (height - ph) * 0.5f;
-
-                drawRect(px, py, pw, ph, 0.03f, 0.05f, 0.09f, 0.95f);
-                drawRect(px, py, pw, 2, 0.35f, 0.85f, 1.00f, 0.95f);
-                drawText(px + 92, py + 18, 2.0f, "SPACEINC MENU", 0.45f, 0.88f, 1.0f, 1.0f);
-
-                String[] labels = { "CONTINUE", "SAVE", "LOAD", "SETTINGS", "ABOUT", "QUIT" };
-                boolean[] enabled = { true, true, true, false, false, true };
-                float btnW = 240;
-                float btnH = 36;
-                float btnX = px + (pw - btnW) * 0.5f;
-                float startY = py + 58;
-
-                for (int i = 0; i < labels.length; i++) {
-                    float by = startY + i * 44;
-                    boolean active = enabled[i];
-                    boolean isQuit = "QUIT".equals(labels[i]);
-                    if (active) {
-                        drawRect(btnX, by, btnW, btnH, isQuit ? 0.24f : 0.09f, isQuit ? 0.07f : 0.16f, isQuit ? 0.08f : 0.24f, 0.95f);
-                        drawRect(btnX, by, btnW, 1.5f, isQuit ? 0.95f : 0.35f, isQuit ? 0.32f : 0.82f, isQuit ? 0.32f : 1.00f, 0.9f);
-                        drawText(btnX + 20, by + 11, 1.7f, labels[i], 0.95f, 0.98f, 1.0f, 1.0f);
-                    } else {
-                        drawRect(btnX, by, btnW, btnH, 0.05f, 0.07f, 0.11f, 0.80f);
-                        drawText(btnX + 20, by + 11, 1.7f, labels[i], 0.42f, 0.48f, 0.56f, 0.8f);
-                    }
-                }
-            }
-        }
-
-        // Bottom-left telemetry
-        drawRect(18, height - 92, 410, 74, 0.03f, 0.05f, 0.09f, 0.72f);
-        float speed = ship.velocity.length();
-        String wp = (ship.waypoint != null) ? "AUTOPILOT ACTIVE" : "MANUAL";
-        drawText(30, height - 80, 1.6f, String.format("SPEED: %5.1f M/S   MODE: %s", speed, wp), 0.78f, 0.92f, 1.0f, 1.0f);
-        drawText(30, height - 58, 1.6f, "CAM FOCUS [TAB]: " + targetName, 0.45f, 0.90f, 0.75f, 1.0f);
-        drawText(30, height - 38, 1.4f, "FPS: " + fps, 0.55f, 0.65f, 0.75f, 0.9f);
-
-        // Bottom-right controls
-        drawRect(width - 378, height - 112, 360, 94, 0.03f, 0.05f, 0.09f, 0.72f);
-        drawText(width - 364, height - 100, 1.4f, "WASD / ARROWS : THRUST", 0.72f, 0.80f, 0.90f, 0.95f);
-        drawText(width - 364, height - 82, 1.4f, "SHIFT         : AFTERBURNER", 0.72f, 0.80f, 0.90f, 0.95f);
-        drawText(width - 364, height - 64, 1.4f, "LEFT CLICK    : TARGET OBJECT", 0.72f, 0.80f, 0.90f, 0.95f);
-        drawText(width - 364, height - 46, 1.4f, "R-DRAG / Q-E  : ORBIT CAMERA", 0.72f, 0.80f, 0.90f, 0.95f);
-        drawText(width - 364, height - 28, 1.4f, "SCROLL        : ZOOM", 0.72f, 0.80f, 0.90f, 0.95f);
-
+    private void flushToScreen(int width, int height) {
         if (vertCount == 0) return;
         buffer.flip();
 
@@ -543,8 +148,7 @@ public class HudOverlay {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         shader.use();
-        shader.setFloat("uScreenSize", 0f); // unused, use vec2 via glUniform2f
-        int loc = glGetUniformLocation(getProgramHack(), "uScreenSize");
+        int loc = glGetUniformLocation(glGetInteger(GL_CURRENT_PROGRAM), "uScreenSize");
         if (loc != -1) glUniform2f(loc, (float) width, (float) height);
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -557,82 +161,429 @@ public class HudOverlay {
         glEnable(GL_DEPTH_TEST);
     }
 
-    private void drawVerticalScrollbar(float x, float y, float w, float h,
-                                       int scrollRow, int totalRows, int visibleRows,
-                                       float r, float g, float b) {
-        drawRect(x, y, w, h, 0.07f, 0.10f, 0.15f, 0.90f);
-        int maxScroll = Math.max(1, totalRows - visibleRows);
-        float thumbH = Math.max(24f, h * ((float) visibleRows / totalRows));
-        float frac = (float) scrollRow / maxScroll;
-        float thumbY = y + frac * (h - thumbH);
-        drawRect(x + 1, thumbY, w - 2, thumbH, r, g, b, 0.85f);
+    private void drawTopLeftPanel(GameState s) {
+        drawRect(18, 18, 560, 108, new Rgba(0.03f, 0.05f, 0.09f, 0.76f));
+        String zone = s.starSystem.isCoreFederation ? "FEDERATION CORE (LOW PURITY)" : "FRONTIER (HIGH PURITY)";
+        Rgba zoneCol = s.starSystem.isCoreFederation ? CYAN : new Rgba(1.0f, 0.58f, 0.28f, 1.0f);
+        drawText(30, 28, 1.8f, "SYSTEM: " + s.starSystem.systemName + " // " + zone, zoneCol);
+
+        int starNum = s.starSystem.starType.ordinal() + 1;
+        int starTotal = StarSystem.StarType.values().length;
+        drawText(30, 50, 1.5f, "STAR [" + starNum + "/" + starTotal + "]: " + s.starSystem.starType.displayName, GOLD);
+        drawText(30, 70, 1.45f, String.format("CREDITS: %d CR   [I] INVENTORY   [M] GALAXY MAP", s.credits), GREEN);
+        drawText(30, 90, 1.35f, "[ / ] CYCLE STAR   [J] JUMP GATE   [ESC] MENU", MUTED);
+
+        if (s.statusMsg != null && !s.statusMsg.isEmpty()) {
+            drawRect(18, 132, 560, 28, new Rgba(0.16f, 0.09f, 0.04f, 0.92f));
+            drawText(30, 140, 1.35f, s.statusMsg, GOLD);
+        }
     }
 
-    private void drawCargoTile(float x, float y, float size, ShipInventory.CargoItem item, boolean selected) {
-        float r, g, b;
-        if ("FUEL".equals(item.kind)) {
-            r = 0.14f; g = 0.42f; b = 0.62f;
-        } else if ("ORE".equals(item.kind)) {
-            r = 0.52f; g = 0.28f; b = 0.14f;
+    private void drawTargetCard(GameState s) {
+        TargetInfo sel = s.selectedTarget;
+        if (sel == null) return;
+
+        float cardW = 590f;
+        float cardH = (sel.jumpTargetSystemId != null) ? 116f
+            : (sel.marketStation != null ? 148f : (128f + sel.deposits.size() * 20f));
+        float cx = s.winWidth - cardW - 18f;
+        float cy = 18f;
+
+        drawRect(cx, cy, cardW, cardH, BG_DARK);
+        drawRect(cx, cy, cardW, 2, CYAN);
+        drawText(cx + 14, cy + 12, 1.8f, "TARGET: " + sel.name, CYAN);
+        drawText(cx + 14, cy + 36, 1.5f, "CLASS:  " + sel.category, new Rgba(0.72f, 0.82f, 0.92f, 0.95f));
+
+        float dist = sel.getPosition().distance(s.ship.position);
+        drawText(cx + 14, cy + 56, 1.5f, String.format("DIST:   %.1f KM", dist), GOLD);
+
+        if (sel.jumpTargetSystemId != null) {
+            drawText(cx + 14, cy + 82, 1.5f, "ACTION: PRESS [J] TO INITIATE STARGATE JUMP", GREEN);
+        } else if (sel.marketStation != null) {
+            drawStationTargetActions(cx, cy, dist);
         } else {
-            r = 0.24f; g = 0.48f; b = 0.38f;
+            drawOreDepositsList(cx, cy, sel);
         }
+    }
 
+    private void drawStationTargetActions(float cx, float cy, float dist) {
+        boolean inRange = dist <= 22.0f;
+        String msg = inRange ? "DOCKING PROXIMITY: IN RANGE (TRANSFER READY)" : "PROXIMITY: APPROACH <= 22.0 KM TO TRANSFER";
+        drawText(cx + 14, cy + 78, 1.35f, msg, inRange ? GREEN : new Rgba(1.0f, 0.65f, 0.25f, 1.0f));
+
+        float btnY = cy + 104;
+        String[] actions = { "BUY", "SELL", "INVENTORY" };
+        for (int i = 0; i < actions.length; i++) {
+            float bx = cx + 14 + i * 136;
+            drawRect(bx, btnY, 124, 30, new Rgba(0.09f, 0.20f, 0.28f, 0.95f));
+            drawRect(bx, btnY, 124, 1.5f, CYAN);
+            drawText(bx + 18, btnY + 9, 1.45f, actions[i], WHITE);
+        }
+    }
+
+    private void drawOreDepositsList(float cx, float cy, TargetInfo sel) {
+        drawText(cx + 14, cy + 78, 1.4f, "MINABLE ORES (SHARE @ PURITY) -> REFINED ELEMENTS:", GREEN);
+        float rowY = cy + 98;
+        for (MineralRegistry.OreDeposit dep : sel.deposits) {
+            String line = String.format("- %s (%d%% @ %d%%) -> %s",
+                dep.ore.displayName, dep.percent, dep.purityPercent, dep.ore.elementListText);
+            drawText(cx + 18, rowY, 1.4f, line, WHITE);
+            rowY += 20;
+        }
+        drawText(cx + 14, rowY + 6, 1.4f, "OWNER:  " + sel.faction + "  [NAVIGATE / SURFACE SOON]", MUTED);
+    }
+
+    private void drawInventoryOverlays(GameState s) {
+        if (s.inventoryOpen) {
+            boolean showTransfer = s.activeStation != null && s.stationHangarOpen;
+            drawInventoryWindow(s.ship.inventory,
+                new WindowSpec(s.invX, s.invY, "CORVETTE CARGO HOLD", CYAN, showTransfer ? "-> TO STATION" : null),
+                s.draggingItem);
+        }
+        if (s.stationHangarOpen && s.activeStation != null) {
+            ShipInventory hangar = s.getHangarFor(s.activeStation);
+            drawInventoryWindow(hangar,
+                new WindowSpec(s.stationInvX, s.stationInvY, s.activeStation.name + " HANGAR", GOLD, "<- TO SHIP"),
+                s.draggingItem);
+        }
+        if (s.shipMenuOpen) {
+            drawRect(s.shipMenuX, s.shipMenuY, 156, 36, new Rgba(0.04f, 0.07f, 0.12f, 0.95f));
+            drawRect(s.shipMenuX, s.shipMenuY, 156, 2, CYAN);
+            drawText(s.shipMenuX + 16, s.shipMenuY + 11, 1.55f, "INVENTORY", WHITE);
+        }
+        if (s.draggingItem != null) {
+            drawCargoTile(new Pos(s.dragMouseX - 32f, s.dragMouseY - 32f), 64f, s.draggingItem, true);
+        }
+    }
+
+    private void drawInventoryWindow(ShipInventory inv, WindowSpec spec, ShipInventory.CargoItem draggingItem) {
+        float wx = spec.x, wy = spec.y, w = 456f, h = 356f;
+        drawRect(wx, wy, w, h, new Rgba(0.03f, 0.05f, 0.09f, 0.92f));
+        drawRect(wx, wy, w, 28, new Rgba(0.08f, 0.14f, 0.22f, 0.96f));
+        drawRect(wx, wy, w, 2, spec.accent);
+        drawText(wx + 12, wy + 8, 1.55f, spec.title, spec.accent);
+
+        drawRect(wx + w - 26, wy + 4, 20, 20, new Rgba(0.32f, 0.08f, 0.10f, 0.92f));
+        drawText(wx + w - 20, wy + 8, 1.5f, "X", WHITE);
+
+        drawCapacityBars(inv, wx, wy, w);
+        drawInventoryGrid(inv, wx + 16, wy + 72, draggingItem);
+        drawVerticalScrollbar(wx + w - 16, wy + 72, inv.scrollRow, spec.accent);
+        drawInventoryFooter(inv, spec, w, h);
+    }
+
+    private void drawCapacityBars(ShipInventory inv, float wx, float wy, float w) {
+        float halfBarW = (w - 40) * 0.5f;
+        double usedM = inv.getUsedMassKg(), maxM = inv.maxMassKg;
+        drawText(wx + 14, wy + 38, 1.2f, String.format("MASS: %.0f / %.0f KG", usedM, maxM), GOLD);
+        drawRect(wx + 14, wy + 53, halfBarW, 7, new Rgba(0.08f, 0.11f, 0.16f, 0.95f));
+        drawRect(wx + 14, wy + 53, halfBarW * (float) Math.min(1.0, usedM / maxM), 7, GOLD);
+
+        float volX = wx + 26 + halfBarW;
+        double usedV = inv.getUsedVolumeM3(), maxV = inv.maxVolumeM3;
+        drawText(volX, wy + 38, 1.2f, String.format("VOL:  %.0f / %.0f M3", usedV, maxV), CYAN);
+        drawRect(volX, wy + 53, halfBarW, 7, new Rgba(0.08f, 0.11f, 0.16f, 0.95f));
+        drawRect(volX, wy + 53, halfBarW * (float) Math.min(1.0, usedV / maxV), 7, CYAN);
+    }
+
+    private void drawInventoryGrid(ShipInventory inv, float gridX, float gridY, ShipInventory.CargoItem draggingItem) {
+        float cell = 64f, gap = 8f;
+        for (ShipInventory.CargoItem item : inv.items) {
+            if (item == draggingItem) continue;
+            int visRow = item.gridRow - inv.scrollRow;
+            if (visRow < 0 || visRow >= ShipInventory.VISIBLE_ROWS) continue;
+            drawCargoTile(new Pos(gridX + item.gridCol * (cell + gap), gridY + visRow * (cell + gap)),
+                cell, item, item == inv.selectedItem);
+        }
+    }
+
+    private void drawInventoryFooter(ShipInventory inv, WindowSpec spec, float w, float h) {
+        float wx = spec.x, wy = spec.y, footY = wy + h - 54;
+        drawRect(wx + 12, footY, w - 24, 42, new Rgba(0.05f, 0.08f, 0.13f, 0.90f));
+        if (inv.selectedItem == null) {
+            drawText(wx + 20, footY + 14, 1.2f, "DRAG: MOVE   SHIFT+DRAG: HALF   CTRL+CLICK: SPLIT", MUTED);
+            return;
+        }
+        ShipInventory.CargoItem sel = inv.selectedItem;
+        drawText(wx + 20, footY + 7, 1.35f, sel.name + "  X" + sel.count, WHITE);
+        drawText(wx + 20, footY + 24, 1.25f,
+            String.format("MASS: %.1f KG   VOL: %.1f M3", sel.getTotalMassKg(), sel.getTotalVolumeM3()), CYAN);
+        if (spec.transferLabel != null) {
+            drawRect(wx + w - 146, footY + 6, 126, 30, new Rgba(0.10f, 0.24f, 0.34f, 0.95f));
+            drawText(wx + w - 138, footY + 15, 1.25f, spec.transferLabel, WHITE);
+        }
+    }
+
+    private void drawMarketModal(GameState s) {
+        if (s.marketMode == null || s.activeStation == null) return;
+        float mw = 540f, mh = 340f;
+        float mx = (s.winWidth - mw) * 0.5f, my = (s.winHeight - mh) * 0.5f;
+
+        drawRect(mx, my, mw, mh, new Rgba(0.03f, 0.05f, 0.09f, 0.95f));
+        drawRect(mx, my, mw, 28, new Rgba(0.10f, 0.16f, 0.24f, 0.96f));
+        drawRect(mx, my, mw, 2, CYAN);
+        drawText(mx + 14, my + 8, 1.55f, s.activeStation.name + " // " + s.marketMode + " TERMINAL", CYAN);
+        drawRect(mx + mw - 26, my + 4, 20, 20, new Rgba(0.32f, 0.08f, 0.10f, 0.92f));
+        drawText(mx + mw - 20, my + 8, 1.5f, "X", WHITE);
+
+        if ("BUY".equals(s.marketMode)) {
+            drawMarketBuyRows(mx, my + 44);
+        } else if ("SELL".equals(s.marketMode)) {
+            drawMarketSellRows(mx, my + 44, s.getHangarFor(s.activeStation));
+        }
+    }
+
+    private void drawMarketBuyRows(float mx, float rowY) {
+        for (MarketCatalog.MarketListing m : MarketCatalog.LISTINGS) {
+            drawText(mx + 16, rowY + 8, 1.35f, m.name, WHITE);
+            drawText(mx + 250, rowY + 8, 1.35f, m.buyPrice + " CR", GOLD);
+            drawRect(mx + 340, rowY, 82, 26, new Rgba(0.10f, 0.25f, 0.34f, 0.95f));
+            drawText(mx + 354, rowY + 7, 1.3f, "BUY 1", WHITE);
+            drawRect(mx + 434, rowY, 82, 26, new Rgba(0.10f, 0.25f, 0.34f, 0.95f));
+            drawText(mx + 448, rowY + 7, 1.3f, "BUY 5", WHITE);
+            rowY += 38;
+        }
+    }
+
+    private void drawMarketSellRows(float mx, float rowY, ShipInventory hangar) {
+        if (hangar.items.isEmpty()) {
+            drawText(mx + 20, rowY + 16, 1.4f, "STATION HANGAR IS EMPTY. TRANSFER ITEMS TO SELL.", MUTED);
+            return;
+        }
+        for (int i = 0; i < Math.min(7, hangar.items.size()); i++) {
+            ShipInventory.CargoItem item = hangar.items.get(i);
+            MarketCatalog.MarketListing ml = MarketCatalog.findById(item.id);
+            int price = (ml != null) ? ml.sellPrice : 20;
+            drawText(mx + 16, rowY + 8, 1.35f, item.name + " X" + item.count, WHITE);
+            drawText(mx + 250, rowY + 8, 1.35f, price + " CR", GREEN);
+            drawRect(mx + 340, rowY, 82, 26, new Rgba(0.26f, 0.18f, 0.10f, 0.95f));
+            drawText(mx + 350, rowY + 7, 1.3f, "SELL 1", WHITE);
+            drawRect(mx + 434, rowY, 88, 26, new Rgba(0.26f, 0.18f, 0.10f, 0.95f));
+            drawText(mx + 440, rowY + 7, 1.3f, "SELL ALL", WHITE);
+            rowY += 38;
+        }
+    }
+
+    private void drawSplitDialog(GameState s) {
+        if (s.splitDialogTarget == null) return;
+        float dw = 340f, dh = 160f;
+        float dx = (s.winWidth - dw) * 0.5f, dy = (s.winHeight - dh) * 0.5f;
+
+        drawRect(dx, dy, dw, dh, new Rgba(0.03f, 0.05f, 0.09f, 0.96f));
+        drawRect(dx, dy, dw, 2, CYAN);
+        drawText(dx + 14, dy + 12, 1.5f, "SPLIT STACK: " + s.splitDialogTarget.name, CYAN);
+
+        int leave = s.splitDialogTarget.count - s.splitDialogAmount;
+        drawText(dx + 14, dy + 38, 1.35f, String.format("TAKE: %d    LEAVE: %d", s.splitDialogAmount, leave), GOLD);
+
+        float trackX = dx + 20, trackY = dy + 68, trackW = dw - 40;
+        float frac = (s.splitDialogTarget.count > 2) ? (float) (s.splitDialogAmount - 1) / (s.splitDialogTarget.count - 2) : 0.5f;
+        drawRect(trackX, trackY, trackW, 8, new Rgba(0.10f, 0.14f, 0.20f, 0.95f));
+        drawRect(trackX, trackY, trackW * frac, 8, CYAN);
+        drawRect(trackX + trackW * frac - 6, trackY - 5, 12, 18, WHITE);
+
+        float btnW = 136, btnH = 32, btnY = dy + dh - 46;
+        drawRect(dx + 20, btnY, btnW, btnH, new Rgba(0.10f, 0.26f, 0.34f, 0.95f));
+        drawRect(dx + 20, btnY, btnW, 1.5f, CYAN);
+        drawText(dx + 58, btnY + 10, 1.45f, "SPLIT", WHITE);
+        drawRect(dx + dw - 20 - btnW, btnY, btnW, btnH, new Rgba(0.16f, 0.10f, 0.12f, 0.95f));
+        drawText(dx + dw - 20 - btnW + 34, btnY + 10, 1.45f, "CANCEL", MUTED);
+    }
+
+    private void drawGalaxyMap(GameState s) {
+        if (!s.galaxyMapOpen) return;
+        float mw = 680, mh = 430;
+        float mx = (s.winWidth - mw) * 0.5f, my = (s.winHeight - mh) * 0.5f;
+        drawRect(mx, my, mw, mh, new Rgba(0.02f, 0.04f, 0.08f, 0.94f));
+        drawRect(mx, my, mw, 2, CYAN);
+        drawText(mx + 20, my + 16, 1.9f, "MILKY WAY SECTOR MAP // 16 SYSTEMS (12 STAR CLASSES)", CYAN);
+        drawText(mx + 20, my + 42, 1.3f, "CLICK ANY STAR TO JUMP   R-DRAG: PAN   SCROLL: ZOOM   [M] CLOSE", MUTED);
+
+        float mapCx = mx + mw * 0.5f + s.mapPanX;
+        float mapCy = my + mh * 0.54f + s.mapPanY;
+        float scaleX = mw * 0.36f * s.mapZoom, scaleY = mh * 0.30f * s.mapZoom;
+        float boxHalf = 22f * Math.max(0.75f, Math.min(1.6f, s.mapZoom));
+
+        for (int i = 0; i < s.galaxyMap.systems.size(); i++) {
+            GalaxyMap.SystemNode node = s.galaxyMap.systems.get(i);
+            float nx = mapCx + node.mapX * scaleX;
+            float ny = mapCy + node.mapY * scaleY;
+            if (!isInsideMap(nx, ny, mx, my, mw, mh)) continue;
+            drawMapSystemLabel(node, i, nx, ny, boxHalf, s.currentSystemId);
+        }
+    }
+
+    private static boolean isInsideMap(float nx, float ny, float mx, float my, float mw, float mh) {
+        return nx >= mx + 12 && nx <= mx + mw - 12 && ny >= my + 62 && ny <= my + mh - 18;
+    }
+
+    private void drawMapSystemLabel(GalaxyMap.SystemNode node, int idx, float nx, float ny, float boxHalf, String currentId) {
+        if (node.id.equals(currentId)) {
+            drawRect(nx - boxHalf, ny - boxHalf, boxHalf * 2f, 2, GREEN);
+            drawRect(nx - boxHalf, ny + boxHalf - 2, boxHalf * 2f, 2, GREEN);
+        }
+        Rgba tierCol = node.isCoreFederation ? CYAN : new Rgba(1.00f, 0.52f, 0.22f, 0.9f);
+        drawText(nx - 58, ny + boxHalf + 6, 1.35f, "[" + (idx + 1) + "] " + node.name, WHITE);
+        drawText(nx - 58, ny + boxHalf + 22, 1.15f, node.isCoreFederation ? "CORE (LOW PURITY)" : "FRONTIER (HIGH PURITY)", tierCol);
+    }
+
+    private void drawPauseMenu(GameState s) {
+        if (!s.pauseMenuOpen) return;
+        drawRect(0, 0, s.winWidth, s.winHeight, new Rgba(0.0f, 0.01f, 0.02f, 0.55f));
+        if ("SAVE".equals(s.menuSubMode)) {
+            drawSavePrompt(s);
+        } else if ("LOAD".equals(s.menuSubMode)) {
+            drawLoadList(s);
+        } else {
+            drawMainMenuButtons(s);
+        }
+    }
+
+    private void drawSavePrompt(GameState s) {
+        float dw = 380, dh = 180;
+        float dx = (s.winWidth - dw) * 0.5f, dy = (s.winHeight - dh) * 0.5f;
+        drawRect(dx, dy, dw, dh, new Rgba(0.03f, 0.05f, 0.09f, 0.96f));
+        drawRect(dx, dy, dw, 2, CYAN);
+        drawText(dx + 18, dy + 16, 1.75f, "SAVE GAME (JSON)", CYAN);
+        drawText(dx + 18, dy + 44, 1.3f, "ENTER SAVE FILE NAME:", MUTED);
+        drawRect(dx + 18, dy + 64, dw - 36, 34, new Rgba(0.06f, 0.09f, 0.14f, 0.95f));
+        drawRect(dx + 18, dy + 64, dw - 36, 1.5f, CYAN);
+        drawText(dx + 28, dy + 74, 1.55f, s.saveNameInput + "_", WHITE);
+
+        float btnW = 156, btnH = 34, btnY = dy + dh - 48;
+        drawRect(dx + 18, btnY, btnW, btnH, new Rgba(0.10f, 0.28f, 0.34f, 0.95f));
+        drawRect(dx + 18, btnY, btnW, 1.5f, CYAN);
+        drawText(dx + 64, btnY + 10, 1.5f, "SAVE", WHITE);
+        drawRect(dx + dw - 18 - btnW, btnY, btnW, btnH, new Rgba(0.16f, 0.10f, 0.12f, 0.95f));
+        drawText(dx + dw - 18 - btnW + 46, btnY + 10, 1.5f, "CANCEL", MUTED);
+    }
+
+    private void drawLoadList(GameState s) {
+        float dw = 400, dh = 340;
+        float dx = (s.winWidth - dw) * 0.5f, dy = (s.winHeight - dh) * 0.5f;
+        drawRect(dx, dy, dw, dh, new Rgba(0.03f, 0.05f, 0.09f, 0.96f));
+        drawRect(dx, dy, dw, 2, CYAN);
+        drawText(dx + 18, dy + 16, 1.75f, "LOAD GAME", CYAN);
+
+        List<String> saves = s.availableSaves;
+        if (saves.isEmpty()) {
+            drawText(dx + 22, dy + 70, 1.4f, "NO SAVE FILES FOUND IN SAVES/", MUTED);
+        } else {
+            float ry = dy + 56;
+            for (int i = 0; i < Math.min(6, saves.size()); i++) {
+                drawRect(dx + 18, ry, dw - 36, 32, new Rgba(0.08f, 0.14f, 0.22f, 0.95f));
+                drawRect(dx + 18, ry, dw - 36, 1.5f, CYAN);
+                drawText(dx + 28, ry + 9, 1.45f, saves.get(i) + ".PB", WHITE);
+                ry += 38;
+            }
+        }
+        drawRect(dx + 18, dy + dh - 48, dw - 36, 34, new Rgba(0.16f, 0.10f, 0.12f, 0.95f));
+        drawText(dx + 162, dy + dh - 38, 1.5f, "BACK", MUTED);
+    }
+
+    private void drawMainMenuButtons(GameState s) {
+        float pw = 320, ph = 340;
+        float px = (s.winWidth - pw) * 0.5f, py = (s.winHeight - ph) * 0.5f;
+        drawRect(px, py, pw, ph, new Rgba(0.03f, 0.05f, 0.09f, 0.95f));
+        drawRect(px, py, pw, 2, CYAN);
+        drawText(px + 92, py + 18, 2.0f, "SPACEINC MENU", CYAN);
+
+        String[] labels = { "CONTINUE", "SAVE", "LOAD", "SETTINGS", "ABOUT", "QUIT" };
+        boolean[] enabled = { true, true, true, false, false, true };
+        float btnW = 240, btnH = 36, btnX = px + (pw - btnW) * 0.5f, startY = py + 58;
+
+        for (int i = 0; i < labels.length; i++) {
+            float by = startY + i * 44;
+            if (!enabled[i]) {
+                drawRect(btnX, by, btnW, btnH, new Rgba(0.05f, 0.07f, 0.11f, 0.80f));
+                drawText(btnX + 20, by + 11, 1.7f, labels[i], new Rgba(0.42f, 0.48f, 0.56f, 0.8f));
+                continue;
+            }
+            boolean isQuit = "QUIT".equals(labels[i]);
+            Rgba bg = isQuit ? new Rgba(0.24f, 0.07f, 0.08f, 0.95f) : new Rgba(0.09f, 0.16f, 0.24f, 0.95f);
+            Rgba border = isQuit ? new Rgba(0.95f, 0.32f, 0.32f, 0.9f) : CYAN;
+            drawRect(btnX, by, btnW, btnH, bg);
+            drawRect(btnX, by, btnW, 1.5f, border);
+            drawText(btnX + 20, by + 11, 1.7f, labels[i], WHITE);
+        }
+    }
+
+    private void drawBottomHud(GameState s, int fps) {
+        int h = s.winHeight, w = s.winWidth;
+        drawRect(18, h - 92, 410, 74, new Rgba(0.03f, 0.05f, 0.09f, 0.72f));
+        drawText(30, h - 80, 1.6f, String.format("SPEED: %5.1f M/S   MODE: MANUAL", s.ship.velocity.length()), WHITE);
+        drawText(30, h - 58, 1.6f, "CAM FOCUS [TAB]: " + s.getFocusName(), GREEN);
+        drawText(30, h - 38, 1.4f, "FPS: " + fps, MUTED);
+
+        drawRect(w - 378, h - 112, 360, 94, new Rgba(0.03f, 0.05f, 0.09f, 0.72f));
+        drawText(w - 364, h - 100, 1.4f, "WASD / ARROWS : THRUST", MUTED);
+        drawText(w - 364, h - 82, 1.4f, "SHIFT         : AFTERBURNER", MUTED);
+        drawText(w - 364, h - 64, 1.4f, "LEFT CLICK    : TARGET OBJECT", MUTED);
+        drawText(w - 364, h - 46, 1.4f, "R-DRAG / Q-E  : ORBIT CAMERA", MUTED);
+        drawText(w - 364, h - 28, 1.4f, "SCROLL        : ZOOM", MUTED);
+    }
+
+    private void drawVerticalScrollbar(float x, float y, int scrollRow, Rgba col) {
+        float h = 208f;
+        drawRect(x, y, 8, h, new Rgba(0.07f, 0.10f, 0.15f, 0.90f));
+        int maxScroll = Math.max(1, ShipInventory.ROWS - ShipInventory.VISIBLE_ROWS);
+        float thumbH = Math.max(24f, h * ((float) ShipInventory.VISIBLE_ROWS / ShipInventory.ROWS));
+        float thumbY = y + ((float) scrollRow / maxScroll) * (h - thumbH);
+        drawRect(x + 1, thumbY, 6, thumbH, new Rgba(col.r, col.g, col.b, 0.85f));
+    }
+
+    private void drawCargoTile(Pos pos, float size, ShipInventory.CargoItem item, boolean selected) {
+        float x = pos.x, y = pos.y;
+        Rgba base = "FUEL".equals(item.kind) ? new Rgba(0.14f, 0.42f, 0.62f, 1.0f)
+            : ("ORE".equals(item.kind) ? new Rgba(0.52f, 0.28f, 0.14f, 1.0f) : new Rgba(0.24f, 0.48f, 0.38f, 1.0f));
         if (selected) {
-            drawRect(x - 2, y - 2, size + 4, size + 4, 0.40f, 0.92f, 1.00f, 0.95f);
+            drawRect(x - 2, y - 2, size + 4, size + 4, CYAN);
         }
-        drawRect(x, y, size, size, r * 0.55f, g * 0.55f, b * 0.55f, 0.95f);
-        drawRect(x, y, size, 3, r, g, b, 1.0f);
+        drawRect(x, y, size, size, new Rgba(base.r * 0.55f, base.g * 0.55f, base.b * 0.55f, 0.95f));
+        drawRect(x, y, size, 3, base);
+        drawText(x + 12, y + 18, 2.0f, item.shortCode, WHITE);
 
-        // Short icon code in center
-        drawText(x + 12, y + 18, 2.0f, item.shortCode, 0.95f, 0.98f, 1.0f, 1.0f);
-
-        // Little stack count badge in bottom-right corner
         if (item.stackable) {
             String qty = String.valueOf(item.count);
             float bw = Math.max(18, qty.length() * 8 + 6);
-            drawRect(x + size - bw - 2, y + size - 15, bw, 13, 0.02f, 0.04f, 0.07f, 0.88f);
-            drawText(x + size - bw + 1, y + size - 13, 1.2f, qty, 1.00f, 0.90f, 0.45f, 1.0f);
+            drawRect(x + size - bw - 2, y + size - 15, bw, 13, new Rgba(0.02f, 0.04f, 0.07f, 0.88f));
+            drawText(x + size - bw + 1, y + size - 13, 1.2f, qty, GOLD);
         }
     }
 
-    private int getProgramHack() {
-        return glGetInteger(GL_CURRENT_PROGRAM);
-    }
-
-    private void drawText(float x, float y, float scale, String text, float r, float g, float b, float a) {
+    private void drawText(float x, float y, float scale, String text, Rgba col) {
         String upper = text.toUpperCase();
         float cx = x;
         for (int i = 0; i < upper.length(); i++) {
-            char ch = upper.charAt(i);
-            int[] glyph = FONT.get(ch);
-            if (glyph != null) {
-                for (int row = 0; row < 7; row++) {
-                    int bits = glyph[row];
-                    for (int col = 0; col < 5; col++) {
-                        if ((bits & (1 << (4 - col))) != 0) {
-                            drawRect(cx + col * scale, y + row * scale, scale, scale, r, g, b, a);
-                        }
-                    }
-                }
-            }
+            int[] glyph = FONT.get(upper.charAt(i));
+            if (glyph != null) drawGlyph(new Pos(cx, y), scale, glyph, col);
             cx += 6.0f * scale;
         }
     }
 
-    private void drawRect(float x, float y, float w, float h, float r, float g, float b, float a) {
-        if (vertCount + 6 > MAX_VERTS) return;
-        putVert(x, y, r, g, b, a);
-        putVert(x, y + h, r, g, b, a);
-        putVert(x + w, y + h, r, g, b, a);
-
-        putVert(x, y, r, g, b, a);
-        putVert(x + w, y + h, r, g, b, a);
-        putVert(x + w, y, r, g, b, a);
+    private void drawGlyph(Pos pos, float scale, int[] glyph, Rgba col) {
+        for (int row = 0; row < 7; row++) {
+            int bits = glyph[row];
+            for (int colIdx = 0; colIdx < 5; colIdx++) {
+                if ((bits & (1 << (4 - colIdx))) != 0) {
+                    drawRect(pos.x + colIdx * scale, pos.y + row * scale, scale, scale, col);
+                }
+            }
+        }
     }
 
-    private void putVert(float x, float y, float r, float g, float b, float a) {
-        buffer.put(x).put(y).put(r).put(g).put(b).put(a);
+    private void drawRect(float x, float y, float w, float h, Rgba c) {
+        if (vertCount + 6 > MAX_VERTS) return;
+        putVert(x, y, c);
+        putVert(x, y + h, c);
+        putVert(x + w, y + h, c);
+        putVert(x, y, c);
+        putVert(x + w, y + h, c);
+        putVert(x + w, y, c);
+    }
+
+    private void putVert(float x, float y, Rgba c) {
+        buffer.put(x).put(y).put(c.r).put(c.g).put(c.b).put(c.a);
         vertCount++;
     }
 

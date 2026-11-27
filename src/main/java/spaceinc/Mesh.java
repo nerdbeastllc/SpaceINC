@@ -103,6 +103,11 @@ public class Mesh {
             }
         }
 
+        addSphereIndices(inds, stacks, slices);
+        return buildIndexed(toFloatArray(verts), toIntArray(inds), GL_TRIANGLES);
+    }
+
+    private static void addSphereIndices(List<Integer> inds, int stacks, int slices) {
         int stride = slices + 1;
         for (int i = 0; i < stacks; i++) {
             for (int j = 0; j < slices; j++) {
@@ -115,8 +120,6 @@ public class Mesh {
                 inds.add(b); inds.add(d); inds.add(c);
             }
         }
-
-        return buildIndexed(toFloatArray(verts), toIntArray(inds), GL_TRIANGLES);
     }
 
     public static Mesh createRing(int segments, float innerR, float outerR) {
@@ -279,19 +282,19 @@ public class Mesh {
         float[] aftRight = { 0.45f, 0.02f, -1.25f };
 
         // Main hull (armor = 0.1)
-        addTri(v, idx, nose, midTop, midRight, 0.1f);
-        addTri(v, idx, nose, midLeft, midTop, 0.1f);
-        addTri(v, idx, nose, midRight, midBot, 0.1f);
-        addTri(v, idx, nose, midBot, midLeft, 0.1f);
+        addTri(v, idx, new float[][]{nose, midTop, midRight}, 0.1f);
+        addTri(v, idx, new float[][]{nose, midLeft, midTop}, 0.1f);
+        addTri(v, idx, new float[][]{nose, midRight, midBot}, 0.1f);
+        addTri(v, idx, new float[][]{nose, midBot, midLeft}, 0.1f);
 
-        addQuad(v, idx, midTop, aftTop, aftRight, midRight, 0.1f);
-        addQuad(v, idx, midLeft, aftLeft, aftTop, midTop, 0.1f);
-        addQuad(v, idx, midRight, aftRight, aftBot, midBot, 0.1f);
-        addQuad(v, idx, midBot, aftBot, aftLeft, midLeft, 0.1f);
+        addQuad(v, idx, new float[][]{midTop, aftTop, aftRight, midRight}, 0.1f);
+        addQuad(v, idx, new float[][]{midLeft, aftLeft, aftTop, midTop}, 0.1f);
+        addQuad(v, idx, new float[][]{midRight, aftRight, aftBot, midBot}, 0.1f);
+        addQuad(v, idx, new float[][]{midBot, aftBot, aftLeft, midLeft}, 0.1f);
 
         // Aft cap (dark trim = 0.5)
-        addTri(v, idx, aftTop, aftLeft, aftBot, 0.5f);
-        addTri(v, idx, aftTop, aftBot, aftRight, 0.5f);
+        addTri(v, idx, new float[][]{aftTop, aftLeft, aftBot}, 0.5f);
+        addTri(v, idx, new float[][]{aftTop, aftBot, aftRight}, 0.5f);
 
         // Canopy (dark glass = 0.5)
         float[] cFront = { 0f, 0.24f, 0.85f };
@@ -299,10 +302,10 @@ public class Mesh {
         float[] cLeft = { -0.18f, 0.25f, 0.15f };
         float[] cRight = { 0.18f, 0.25f, 0.15f };
         float[] cBack = { 0f, 0.34f, -0.45f };
-        addTri(v, idx, cFront, cTop, cRight, 0.5f);
-        addTri(v, idx, cFront, cLeft, cTop, 0.5f);
-        addTri(v, idx, cTop, cBack, cRight, 0.5f);
-        addTri(v, idx, cLeft, cBack, cTop, 0.5f);
+        addTri(v, idx, new float[][]{cFront, cTop, cRight}, 0.5f);
+        addTri(v, idx, new float[][]{cFront, cLeft, cTop}, 0.5f);
+        addTri(v, idx, new float[][]{cTop, cBack, cRight}, 0.5f);
+        addTri(v, idx, new float[][]{cLeft, cBack, cTop}, 0.5f);
 
         // Swept wings (armor = 0.1)
         for (int side : new int[] { -1, 1 }) {
@@ -313,20 +316,20 @@ public class Mesh {
             float[] wRootTop = { side * 0.40f, 0.14f, -0.4f };
 
             if (side > 0) {
-                addQuad(v, idx, wRootF, wRootB, wTipB, wTipF, 0.1f);
-                addQuad(v, idx, wTipF, wTipB, wRootB, wRootF, 0.1f);
-                addTri(v, idx, wRootF, wRootTop, wTipF, 0.5f);
+                addQuad(v, idx, new float[][]{wRootF, wRootB, wTipB, wTipF}, 0.1f);
+                addQuad(v, idx, new float[][]{wTipF, wTipB, wRootB, wRootF}, 0.1f);
+                addTri(v, idx, new float[][]{wRootF, wRootTop, wTipF}, 0.5f);
             } else {
-                addQuad(v, idx, wTipF, wTipB, wRootB, wRootF, 0.1f);
-                addQuad(v, idx, wRootF, wRootB, wTipB, wTipF, 0.1f);
-                addTri(v, idx, wTipF, wRootTop, wRootF, 0.5f);
+                addQuad(v, idx, new float[][]{wTipF, wTipB, wRootB, wRootF}, 0.1f);
+                addQuad(v, idx, new float[][]{wRootF, wRootB, wTipB, wTipF}, 0.1f);
+                addTri(v, idx, new float[][]{wTipF, wRootTop, wRootF}, 0.5f);
             }
 
             // Wingtip accent glow (0.9)
             float[] tA = { side * 1.38f, -0.04f, -0.60f };
             float[] tB = { side * 1.44f, -0.06f, -1.12f };
             float[] tC = { side * 1.32f, -0.08f, -1.12f };
-            addTri(v, idx, tA, tB, tC, 0.9f);
+            addTri(v, idx, new float[][]{tA, tB, tC}, 0.9f);
 
             // Engine nacelles + glowing thruster nozzles (0.9)
             float nx = side * 0.32f;
@@ -337,7 +340,7 @@ public class Mesh {
             float[] n1 = { nx + r, ny + r, nz };
             float[] n2 = { nx + r, ny - r, nz };
             float[] n3 = { nx - r, ny - r, nz };
-            addQuad(v, idx, n0, n3, n2, n1, 0.9f);
+            addQuad(v, idx, new float[][]{n0, n3, n2, n1}, 0.9f);
         }
 
         return buildIndexed(toFloatArray(v), toIntArray(idx), GL_TRIANGLES);
@@ -363,7 +366,7 @@ public class Mesh {
             float[] t1 = { (float) Math.cos(a1) * spireR, topY, (float) Math.sin(a1) * spireR };
             float[] b0 = { (float) Math.cos(a0) * spireR, botY, (float) Math.sin(a0) * spireR };
             float[] b1 = { (float) Math.cos(a1) * spireR, botY, (float) Math.sin(a1) * spireR };
-            addQuad(v, idx, t0, t1, b1, b0, 0.5f);
+            addQuad(v, idx, new float[][]{t0, t1, b1, b0}, 0.5f);
         }
 
         // Outer trade ring (8-sided torus-like ring at y=0)
@@ -383,18 +386,17 @@ public class Mesh {
             float[] ob0 = { c0 * rOut, -h, s0 * rOut };
             float[] ob1 = { c1 * rOut, -h, s1 * rOut };
 
-            addQuad(v, idx, it0, ot0, ot1, it1, 0.1f); // top
-            addQuad(v, idx, ib1, ob1, ob0, ib0, 0.1f); // bottom
-            addQuad(v, idx, ot0, ob0, ob1, ot1, 0.1f); // outer
-            addQuad(v, idx, it1, ib1, ib0, it0, 0.5f); // inner
+            addQuad(v, idx, new float[][]{it0, ot0, ot1, it1}, 0.1f);
+            addQuad(v, idx, new float[][]{ib1, ob1, ob0, ib0}, 0.1f);
+            addQuad(v, idx, new float[][]{ot0, ob0, ob1, ot1}, 0.1f);
+            addQuad(v, idx, new float[][]{it1, ib1, ib0, it0}, 0.5f);
 
-            // Emissive docking beacon strip on every second segment
             if (i % 2 == 0) {
                 float[] bt0 = { c0 * (rOut + 0.04f), h * 0.45f, s0 * (rOut + 0.04f) };
                 float[] bt1 = { c1 * (rOut + 0.04f), h * 0.45f, s1 * (rOut + 0.04f) };
                 float[] bb0 = { c0 * (rOut + 0.04f), -h * 0.45f, s0 * (rOut + 0.04f) };
                 float[] bb1 = { c1 * (rOut + 0.04f), -h * 0.45f, s1 * (rOut + 0.04f) };
-                addQuad(v, idx, bt0, bb0, bb1, bt1, 0.9f);
+                addQuad(v, idx, new float[][]{bt0, bb0, bb1, bt1}, 0.9f);
             }
         }
 
@@ -407,18 +409,29 @@ public class Mesh {
             float[] s1 = { c * spireR - px, 0.12f, s * spireR - pz };
             float[] e0 = { c * rIn + px, 0.12f, s * rIn + pz };
             float[] e1 = { c * rIn - px, 0.12f, s * rIn - pz };
-            addQuad(v, idx, s0, e0, e1, s1, 0.5f);
+            addQuad(v, idx, new float[][]{s0, e0, e1, s1}, 0.5f);
         }
 
         return buildIndexed(toFloatArray(v), toIntArray(idx), GL_TRIANGLES);
     }
 
-    private static void addQuad(List<Float> v, List<Integer> idx, float[] a, float[] b, float[] c, float[] d, float mat) {
-        addTri(v, idx, a, b, c, mat);
-        addTri(v, idx, a, c, d, mat);
+    private static void addQuad(List<Float> v, List<Integer> idx, float[][] q, float mat) {
+        addTri(v, idx, new float[][]{q[0], q[1], q[2]}, mat);
+        addTri(v, idx, new float[][]{q[0], q[2], q[3]}, mat);
     }
 
-    private static void addTri(List<Float> v, List<Integer> idx, float[] a, float[] b, float[] c, float mat) {
+    private static void addTri(List<Float> v, List<Integer> idx, float[][] pts, float mat) {
+        float[] n = computeNormal(pts[0], pts[1], pts[2]);
+        int base = v.size() / 8;
+        for (float[] p : pts) {
+            v.add(p[0]); v.add(p[1]); v.add(p[2]);
+            v.add(n[0]); v.add(n[1]); v.add(n[2]);
+            v.add(mat); v.add(0.5f);
+        }
+        idx.add(base); idx.add(base + 1); idx.add(base + 2);
+    }
+
+    private static float[] computeNormal(float[] a, float[] b, float[] c) {
         float ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
         float vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
         float nx = uy * vz - uz * vy;
@@ -428,14 +441,7 @@ public class Mesh {
         if (len > 1e-6f) {
             nx /= len; ny /= len; nz /= len;
         }
-        int base = v.size() / 8;
-        float[][] pts = { a, b, c };
-        for (float[] p : pts) {
-            v.add(p[0]); v.add(p[1]); v.add(p[2]);
-            v.add(nx); v.add(ny); v.add(nz);
-            v.add(mat); v.add(0.5f);
-        }
-        idx.add(base); idx.add(base + 1); idx.add(base + 2);
+        return new float[]{ nx, ny, nz };
     }
 
     private static float[] toFloatArray(List<Float> list) {
